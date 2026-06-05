@@ -34,6 +34,10 @@ export default function Dashboard() {
         ? 'warning'
         : 'safe';
 
+  // No income entered yet for a current/future month: safe-to-spend is undefined,
+  // not zero. Show a prompt instead of a misleading €0.
+  const noIncome = summary.monthlyIncome === 0 && !summary.isPastMonth;
+
   return (
     <div className="stack">
       {/* Hero: the two numbers that matter most */}
@@ -41,12 +45,23 @@ export default function Dashboard() {
         <div className="grid grid-2" style={{ gap: 18 }}>
           <div>
             <div className="stat-label">Safe to spend · rest of {summary.isCurrentMonth ? 'this month' : 'the month'}</div>
-            <div className="big">{eur(Math.max(0, summary.remainingMoney))}</div>
-            <div className="hero-sub">
-              {summary.daysLeft > 0
-                ? `About ${eur(summary.safeToSpendPerDay)} per day · ${eur(summary.weeklyLimit)} per week · ${summary.daysLeft} days left (incl. today)`
-                : 'This month is over.'}
-            </div>
+            {noIncome ? (
+              <>
+                <div className="big">—</div>
+                <div className="hero-sub">
+                  Add this month's income to calculate your safe-to-spend.
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="big">{eur(Math.max(0, summary.remainingMoney))}</div>
+                <div className="hero-sub">
+                  {summary.daysLeft > 0
+                    ? `About ${eur(summary.safeToSpendPerDay)} per day · ${eur(summary.weeklyLimit)} per week · ${summary.daysLeft} days left (incl. today)`
+                    : 'This month is over.'}
+                </div>
+              </>
+            )}
           </div>
           <div>
             <div className="stat-label">Real net money (after debt)</div>
@@ -87,11 +102,15 @@ export default function Dashboard() {
         <Stat label="Variable spending" value={eur(summary.variableSpending)} />
         <Stat
           label="Remaining this month"
-          value={eur(summary.remainingMoney)}
-          tone={remainingTone}
+          value={noIncome ? '—' : eur(summary.remainingMoney)}
+          tone={noIncome ? 'neutral' : remainingTone}
           hint="income − fixed − spending"
         />
-        <Stat label="Safe to spend / day" value={eur(summary.safeToSpendPerDay)} tone={remainingTone} />
+        <Stat
+          label="Safe to spend / day"
+          value={noIncome ? '—' : eur(summary.safeToSpendPerDay)}
+          tone={noIncome ? 'neutral' : remainingTone}
+        />
         <Stat label="Total bank balance" value={eur(summary.totalBank)} />
         <Stat label="Total debt" value={eur(summary.totalDebt)} tone={summary.totalDebt > 0 ? 'warning' : 'neutral'} />
         <Stat
