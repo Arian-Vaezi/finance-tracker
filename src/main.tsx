@@ -2,15 +2,18 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { StoreProvider } from './store';
+import { AuthProvider } from './auth';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <StoreProvider>
-        <App />
-      </StoreProvider>
+      <AuthProvider>
+        <StoreProvider>
+          <App />
+        </StoreProvider>
+      </AuthProvider>
     </ErrorBoundary>
   </React.StrictMode>,
 );

@@ -218,6 +218,50 @@ a {
   font-size: 12.5px;
 }
 
+/* Cloud-sync status pill */
+.sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.sync-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.sync-pill--synced .sync-dot,
+.sync-pill--idle .sync-dot {
+  background: var(--safe);
+}
+.sync-pill--syncing .sync-dot {
+  background: var(--warning);
+  animation: pulse 1s ease-in-out infinite;
+}
+.sync-pill--error .sync-dot {
+  background: var(--danger);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
 /* Demo-mode banner */
 .demo-banner {
   display: flex;
@@ -235,6 +279,13 @@ a {
 .demo-banner .btn {
   padding: 6px 12px;
   font-size: 13px;
+}
+
+/* Personal-mode "sign in to sync" banner */
+.sync-banner {
+  background: #eef2ff;
+  color: #3730a3;
+  border-bottom-color: #c7d2fe;
 }
 
 /* Error boundary fallback */

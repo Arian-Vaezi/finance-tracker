@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useStore } from './store';
+import { useAuth } from './auth';
 import { addMonths, monthLabel } from './lib/format';
 import { Segmented } from './components/ui';
 import Dashboard from './pages/Dashboard';
@@ -72,9 +73,17 @@ function MonthSelector() {
   );
 }
 
+const SYNC_LABEL: Record<string, string> = {
+  syncing: 'Syncing…',
+  synced: 'Synced',
+  error: 'Sync error',
+  idle: 'Synced',
+};
+
 export default function App() {
   const [tab, setTab] = useState<Tab>('dashboard');
-  const { mode, setMode } = useStore();
+  const { mode, setMode, cloudActive, syncStatus } = useStore();
+  const { configured, session } = useAuth();
 
   return (
     <div className={`app ${tab === 'panic' ? 'panic' : ''}`}>
@@ -108,6 +117,12 @@ export default function App() {
         <header className="topbar">
           <div className="topbar-title">{TITLES[tab]}</div>
           <div className="topbar-right">
+            {cloudActive && (
+              <span className={`sync-pill sync-pill--${syncStatus}`} title="Cloud sync status">
+                <span className="sync-dot" />
+                {SYNC_LABEL[syncStatus] ?? 'Synced'}
+              </span>
+            )}
             <Segmented<typeof mode>
               size="sm"
               value={mode}
@@ -128,6 +143,17 @@ export default function App() {
             </span>
             <button className="btn btn--secondary" onClick={() => setMode('personal')}>
               Switch to Personal
+            </button>
+          </div>
+        )}
+
+        {mode === 'personal' && configured && !session && (
+          <div className="demo-banner sync-banner">
+            <span>
+              🔄 Sign in to sync your data between your laptop and phone.
+            </span>
+            <button className="btn btn--secondary" onClick={() => setTab('settings')}>
+              Set up sync
             </button>
           </div>
         )}

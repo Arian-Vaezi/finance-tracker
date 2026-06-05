@@ -4,11 +4,13 @@ A clean, mobile-first **personal finance tracker** built for the reality of **va
 advice: how much is safe to spend per day, whether fixed costs are too high, and —
 crucially — how much money is *really* yours once debt is subtracted.
 
-**Local-first** (all data lives in your browser), **no backend, no login, no tracking.**
-Installable as a PWA. Built with **React + TypeScript + Vite**.
+**Local-first** (data lives in your browser by default) with **optional** account-based
+**cloud sync** across devices. No tracking. Installable as a PWA. Built with
+**React + TypeScript + Vite** and an optional **Supabase** backend for sync.
 
 > 🔒 **Privacy by design:** the public source and demo contain only *fictional* data.
-> Real financial data is entered in **Personal mode** and never leaves your browser.
+> Real data is entered in **Personal mode** — kept on-device by default, or in your own
+> private Supabase project if you opt into cloud sync.
 
 <!-- Add real images to docs/screenshots/ then these will render -->
 ![Dashboard](docs/screenshots/dashboard.png)
@@ -50,6 +52,8 @@ React + TypeScript, financial logic, and deployment.
   insurance, this week's food budget, what to cut first, and whether you're spending
   borrowed money.
 - **Personal / Demo modes** — keep real data private; show fictional data to visitors.
+- **Optional cloud sync** — sign in (email/password) to sync your Personal data across
+  devices via Supabase. The app works fully without it, too.
 - **Data portability** — export to **CSV**, full **JSON backup/import**, reset demo data.
 - **PWA** — installable to your phone home screen, works offline.
 - **Responsive** — sidebar on desktop, bottom tab bar on mobile.
@@ -61,6 +65,9 @@ React + TypeScript, financial logic, and deployment.
   on load so corrupt data can't crash the app.
 - **Privacy-aware architecture** — Personal and Demo datasets are stored under separate
   keys and switched at runtime; no real data is ever hard-coded in source.
+- **Optional cloud sync** — Supabase auth + Postgres with Row Level Security, layered on
+  top of the local-first store (debounced last-write-wins push, pull on sign-in/focus),
+  with graceful fallback to local-only when no backend is configured.
 - **Financial forecasting logic** — projects end-of-month balance from current spending
   pace and compares budget-used vs. time-elapsed to detect overspending early.
 - **Debt-aware net worth** — `real_net_worth = total_bank − total_debt`, surfaced
@@ -84,12 +91,14 @@ React + TypeScript, financial logic, and deployment.
 | State | React Context + hooks (no external state lib) |
 | Styling | Hand-written CSS (CSS variables, mobile-first) |
 | Charts | Custom, dependency-free (CSS/flex bars) |
-| Persistence | `localStorage` |
+| Persistence | `localStorage` (local-first) |
+| Auth & sync *(optional)* | Supabase (Auth + Postgres, Row Level Security) |
 | PWA | Web app manifest + minimal service worker |
 | Deploy | Vercel (static) |
 
-**Zero runtime dependencies** beyond React itself — deliberately, to keep it small,
-fast, and easy to audit.
+Beyond React, the **only** runtime dependency is the optional Supabase client (used
+solely for sign-in + sync). The UI and charts are hand-built with zero dependencies —
+deliberately, to keep the app small, fast, and easy to audit.
 
 ## Run locally
 
@@ -123,8 +132,31 @@ vercel --prod   # production deploy
 ```
 
 The included `vercel.json` pins the framework, build command, output directory, and an
-SPA rewrite. Because the app stores everything in `localStorage`, the public deployment
-shows **Demo mode** to visitors and never has access to any real data.
+SPA rewrite. Without sync env vars, the public deployment keeps everything in
+`localStorage`, shows **Demo mode** to visitors, and never has access to any real data.
+
+## Cloud sync (optional)
+
+By default the app is local-only — no account needed. To sync your **Personal** data
+between devices (laptop ↔ phone), connect a free **Supabase** project:
+
+1. Create a project at [supabase.com](https://supabase.com) (free tier).
+2. In the dashboard → **SQL Editor**, run the contents of
+   [`supabase/schema.sql`](supabase/schema.sql). It creates a `finance_data` table with
+   Row Level Security so each user can only access their own data.
+3. In **Settings → API**, copy your **Project URL** and **anon public** key.
+4. Add them as environment variables:
+   - **Locally:** copy `.env.example` → `.env` and fill in the values.
+   - **On Vercel:** Project → **Settings → Environment Variables** → add
+     `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, then redeploy.
+5. *(Optional)* For instant sign-up without email confirmation:
+   **Authentication → Providers → Email** → turn **Confirm email** off.
+6. In the app → **Data** tab → **Sign in to sync** → create an account. Use the same
+   account on each device and your Personal data stays in sync.
+
+When the variables are absent, the app runs in local-only mode — the sign-in UI is
+hidden and nothing breaks. The Supabase **anon key is safe to expose** in the frontend;
+security is enforced by Row Level Security on the database.
 
 ## Add to your phone (PWA)
 
@@ -137,9 +169,10 @@ shows **Demo mode** to visitors and never has access to any real data.
 
 ```
 src/
-  main.tsx              App entry (error boundary + service worker registration)
-  App.tsx               Layout, navigation, mode toggle, demo banner
-  store.tsx             Context store, Personal/Demo modes, localStorage persistence
+  main.tsx              App entry (error boundary, auth + store providers, SW registration)
+  App.tsx               Layout, navigation, mode toggle, demo/sync banners
+  store.tsx             Context store: Personal/Demo modes, localStorage + cloud sync
+  auth.tsx              Supabase auth context (sign in / up / out, session)
   types.ts              Data model (AppData and friends)
   defaults.ts           Fictional demo data + empty dataset (no real data)
   index.css             Global styles (mobile-first, theme variables)
@@ -148,12 +181,17 @@ src/
     format.ts           Currency / date / month helpers
     csv.ts              CSV export + JSON backup/download
     gigShift.ts           Split-payment helper for variable gig income
+    supabase.ts         Supabase client (no-op when unconfigured)
+    cloud.ts            Pull/push the user's data to Supabase
   components/
     ui.tsx              Reusable UI primitives (Card, Stat, Modal, Segmented, …)
     charts.tsx          Dependency-free bar/proportion charts
+    AccountSync.tsx     Sign-in form + sync status panel
     ErrorBoundary.tsx   Crash recovery screen
   pages/                One file per section (Dashboard, Income, Expenses, …)
 public/                 manifest, service worker, icons
+supabase/
+  schema.sql            Database table + Row Level Security policies
 scripts/
   generate-icons.mjs    Dependency-free PNG icon generator
 ```
@@ -178,7 +216,8 @@ real_net_worth        = total_bank − total_debt
 - Recurring-income templates and auto-rollover of fixed costs each month.
 - Optional charts over time (monthly trend, savings rate).
 - Multi-currency support.
-- Cloud sync behind an optional login (end-to-end encrypted) for cross-device use.
+- End-to-end encryption for cloud-synced data (currently last-write-wins).
+- Real-time multi-device updates (live sync) instead of pull-on-open.
 - Unit tests for the finance engine (the pure `lib/` layer is built for it).
 - Category budgets and goals.
 

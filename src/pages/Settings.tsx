@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useStore, isValidAppData } from '../store';
 import { exportBackupJSON, exportTransactionsCSV } from '../lib/csv';
 import { Button, Card, ConfirmButton, SectionHeader, Segmented } from '../components/ui';
+import { AccountSync } from '../components/AccountSync';
 
 export default function Settings() {
   const { data, mode, setMode, replaceData, resetDemoData, clearAllData } = useStore();
@@ -61,6 +62,9 @@ export default function Settings() {
           datasets are stored separately and never mix.
         </p>
       </Card>
+
+      {/* Account & cloud sync */}
+      <AccountSync />
 
       {/* Export */}
       <Card>

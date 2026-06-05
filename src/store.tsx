@@ -3,6 +3,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -17,26 +18,28 @@ import {
 } from './types';
 import { emptyData, makeDemoData, uid } from './defaults';
 import { currentMonth } from './lib/format';
+import { useAuth } from './auth';
+import { pullData, pushData } from './lib/cloud';
 
 // ---------------------------------------------------------------------------
 // Modes & persistence
 // ---------------------------------------------------------------------------
-// The app keeps two completely separate datasets in localStorage:
-//   - "personal": the owner's real data (starts empty, never shipped in source)
-//   - "demo":     fictional data for portfolio visitors
-// A small `mode` flag decides which one is active. This is what keeps real
-// financial data out of the public repo and public demo.
+// Two separate datasets in localStorage:
+//   - "personal": the owner's real data (and, when signed in, synced to Supabase)
+//   - "demo":     fictional data for portfolio visitors (always local)
+// A `mode` flag decides which is active. This keeps real data out of the public
+// repo and demo, while still allowing optional cross-device cloud sync.
 
 export type Mode = 'personal' | 'demo';
+export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error';
 
 const MODE_KEY = 'finance-tracker-mode';
-const LEGACY_KEY = 'finance-tracker-data-v1'; // pre-modes single dataset
+const LEGACY_KEY = 'finance-tracker-data-v1';
 const DATA_KEYS: Record<Mode, string> = {
   personal: 'finance-tracker-personal-v1',
   demo: 'finance-tracker-demo-v1',
 };
 
-/** Light structural validation so corrupt/foreign data can't crash the app. */
 export function isValidAppData(value: unknown): value is AppData {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
@@ -64,11 +67,10 @@ function writeData(key: string, data: AppData): void {
   try {
     localStorage.setItem(key, JSON.stringify(data));
   } catch {
-    // storage full or disabled - nothing we can do
+    /* storage full or disabled */
   }
 }
 
-/** One-time upgrade: move data saved before modes existed into the personal slot. */
 function migrateLegacy(): void {
   const legacy = readData(LEGACY_KEY);
   if (legacy && !readData(DATA_KEYS.personal)) {
@@ -79,8 +81,6 @@ function migrateLegacy(): void {
 function loadMode(): Mode {
   const saved = localStorage.getItem(MODE_KEY);
   if (saved === 'personal' || saved === 'demo') return saved;
-  // First visit with no saved choice: returning owners (with personal data)
-  // start in Personal mode; new visitors start in Demo mode.
   return readData(DATA_KEYS.personal) ? 'personal' : 'demo';
 }
 
@@ -96,6 +96,12 @@ interface StoreValue {
   data: AppData;
   mode: Mode;
   setMode: (mode: Mode) => void;
+
+  // Cloud sync status (personal mode + signed in)
+  syncStatus: SyncStatus;
+  lastSyncedAt: number | null;
+  cloudActive: boolean;
+  syncNow: () => void;
 
   selectedMonth: string;
   setSelectedMonth: (m: string) => void;
@@ -121,13 +127,12 @@ interface StoreValue {
   deleteDebt: (id: string) => void;
 
   replaceData: (data: AppData) => void;
-  resetDemoData: () => void; // restore fictional demo data
-  clearAllData: () => void; // wipe the active dataset
+  resetDemoData: () => void;
+  clearAllData: () => void;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
 
-// Generic list helpers keep the CRUD methods tiny and consistent.
 function withItem<T extends { id: string }>(list: T[], entry: Omit<T, 'id'>): T[] {
   return [...list, { ...(entry as T), id: uid() }];
 }
@@ -139,23 +144,124 @@ function removeItem<T extends { id: string }>(list: T[], id: string): T[] {
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  const { session, configured } = useAuth();
+  const userId = session?.user.id ?? null;
+
   const [mode, setModeState] = useState<Mode>(() => {
     migrateLegacy();
     return loadMode();
   });
   const [data, setData] = useState<AppData>(() => loadForMode(mode));
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonth());
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
 
-  // Persist the active dataset under the key for the current mode.
+  // Cloud sync is active only when configured, signed in, and in personal mode.
+  const cloudActive = configured && !!userId && mode === 'personal';
+
+  // Refs so async sync callbacks always see the latest values without re-binding.
+  const dataRef = useRef(data);
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+  const syncReadyRef = useRef(false); // becomes true once the initial pull/seed is done
+  const dirtyRef = useRef(false); // unsynced local edits pending a push
+  const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Always cache the active dataset locally (offline support + non-synced use).
   useEffect(() => {
     writeData(DATA_KEYS[mode], data);
   }, [mode, data]);
 
+  // (1) When cloud sync becomes active, pull the cloud copy first. If the cloud
+  //     has nothing yet (new account), seed it from the current local data.
+  useEffect(() => {
+    syncReadyRef.current = false;
+    if (!cloudActive) {
+      setSyncStatus('idle');
+      return;
+    }
+    let cancelled = false;
+    setSyncStatus('syncing');
+    (async () => {
+      try {
+        const remote = await pullData(userId as string);
+        if (cancelled) return;
+        if (remote) {
+          setData(remote);
+        } else {
+          await pushData(userId as string, dataRef.current);
+        }
+        syncReadyRef.current = true;
+        dirtyRef.current = false;
+        setSyncStatus('synced');
+        setLastSyncedAt(Date.now());
+      } catch {
+        if (!cancelled) setSyncStatus('error');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [cloudActive, userId]);
+
+  // (2) Push local changes up (debounced), once the initial pull/seed finished.
+  useEffect(() => {
+    if (!cloudActive || !syncReadyRef.current) return;
+    dirtyRef.current = true;
+    setSyncStatus('syncing');
+    if (pushTimer.current) clearTimeout(pushTimer.current);
+    pushTimer.current = setTimeout(async () => {
+      try {
+        await pushData(userId as string, dataRef.current);
+        dirtyRef.current = false;
+        setSyncStatus('synced');
+        setLastSyncedAt(Date.now());
+      } catch {
+        setSyncStatus('error');
+      }
+    }, 800);
+    return () => {
+      if (pushTimer.current) clearTimeout(pushTimer.current);
+    };
+  }, [data, cloudActive, userId]);
+
+  // (3) When returning to the tab, pull the latest (unless we have unsaved edits).
+  useEffect(() => {
+    if (!cloudActive) return;
+    const onFocus = async () => {
+      if (dirtyRef.current) return;
+      try {
+        const remote = await pullData(userId as string);
+        if (remote) {
+          setData(remote);
+          setLastSyncedAt(Date.now());
+        }
+      } catch {
+        /* ignore transient focus-pull errors */
+      }
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [cloudActive, userId]);
+
   const setMode = (next: Mode) => {
     if (next === mode) return;
     localStorage.setItem(MODE_KEY, next);
-    setData(loadForMode(next)); // load the other dataset...
-    setModeState(next); // ...batched into one render, so it persists correctly
+    setData(loadForMode(next));
+    setModeState(next);
+  };
+
+  const syncNow = () => {
+    if (!cloudActive) return;
+    setSyncStatus('syncing');
+    pullData(userId as string)
+      .then((remote) => {
+        if (remote) setData(remote);
+        setSyncStatus('synced');
+        setLastSyncedAt(Date.now());
+      })
+      .catch(() => setSyncStatus('error'));
   };
 
   const value = useMemo<StoreValue>(() => {
@@ -165,6 +271,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       data,
       mode,
       setMode,
+      syncStatus,
+      lastSyncedAt,
+      cloudActive,
+      syncNow,
       selectedMonth,
       setSelectedMonth,
 
@@ -195,7 +305,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       clearAllData: () => setData(emptyData()),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, mode, selectedMonth]);
+  }, [data, mode, selectedMonth, syncStatus, lastSyncedAt, cloudActive]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
