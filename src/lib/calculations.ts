@@ -15,7 +15,7 @@
 //   remaining_money       = monthly_income - fixed_costs - variable_spending
 //   days_left             = days remaining in the month, including today
 //   safe_to_spend_per_day = remaining_money / days_left
-//   weekly_limit          = remaining_money / weeks_left
+//   weekly_limit          = safe_to_spend_per_day * min(7, days_left)
 //
 //   total_bank   = sum of account balances
 //   total_debt   = sum of (borrowed - repaid) for each debt
@@ -23,7 +23,7 @@
 // ===========================================================================
 
 import { AppData, FixedCost, IncomeEntry } from '../types';
-import { daysInMonth, eur, isInMonth, ordinal, pct, currentMonth } from './format';
+import { addMonths, daysInMonth, eur, isInMonth, ordinal, pct, currentMonth } from './format';
 
 /**
  * The month an income counts toward in the budget: its explicit `budgetMonth`,
@@ -136,10 +136,13 @@ export function computeMonthSummary(
   const remainingAfterFixed = monthlyIncome - fixedCosts;
   const remainingMoney = remainingAfterFixed - variableSpending;
 
-  // Safe-to-spend: spread what's left across the days/weeks that remain.
+  // Safe-to-spend: spread what's left across the days that remain.
   // When the month is over (daysLeft === 0) we just surface the leftover number.
+  // The weekly limit is the daily pace over the next 7 days (or fewer if the
+  // month ends sooner), so the daily and weekly numbers always agree.
   const safeToSpendPerDay = daysLeft > 0 ? remainingMoney / daysLeft : remainingMoney;
-  const weeklyLimit = weeksLeft > 0 ? remainingMoney / weeksLeft : remainingMoney;
+  const weeklyLimit =
+    daysLeft > 0 ? safeToSpendPerDay * Math.min(7, daysLeft) : remainingMoney;
 
   // Pace: are we burning the variable budget faster than time is passing?
   const variableBudget = Math.max(0, remainingAfterFixed);
@@ -384,6 +387,154 @@ export function spendingByCategory(data: AppData, month: string): CategoryTotal[
   return [...map.entries()]
     .map(([category, amount]) => ({ category, amount }))
     .sort((a, b) => b.amount - a.amount);
+}
+
+// ---------------------------------------------------------------------------
+// Recommended category budgets
+// ---------------------------------------------------------------------------
+// Split this month's variable budget across spending categories. With enough
+// history the split mirrors how the user actually spends; before that, a
+// sensible default split is used. Needs are protected: when a typical month
+// doesn't fit the budget, the wants are scaled down first.
+
+// Categories that are not variable spending behaviour, so never budgeted here:
+// transfers just move money between own accounts, and rent / health insurance
+// belong in the fixed-costs ledger.
+const NON_BUDGET_CATEGORIES = new Set(['transfer', 'rent', 'health insurance']);
+
+// Needs survive a tight month; every other category is a want and is cut first.
+const NEED_CATEGORIES = new Set([
+  'groceries',
+  'transport',
+  'pharmacy/health',
+  'university',
+  'household',
+]);
+
+// Default split of the variable budget, used until enough history exists.
+// (University is left out on purpose: semester fees are too lumpy to guess.)
+const DEFAULT_SHARES: Record<string, number> = {
+  groceries: 0.4,
+  'eating out': 0.12,
+  transport: 0.1,
+  household: 0.08,
+  social: 0.08,
+  'pharmacy/health': 0.05,
+  clothes: 0.05,
+  subscriptions: 0.04,
+  gym: 0.03,
+  phone: 0.03,
+  other: 0.02,
+};
+
+const HISTORY_LOOKBACK = 6; // scan up to this many past months...
+const HISTORY_MONTHS = 3; // ...for up to this many months with expenses
+const MIN_HISTORY_MONTHS = 2; // fewer than this -> fall back to DEFAULT_SHARES
+
+export type CategoryBudgetStatus = 'over' | 'fast' | 'ok';
+
+export interface CategoryBudget {
+  category: string;
+  isNeed: boolean;
+  budget: number; // recommended amount for this month
+  spent: number; // spent so far this month
+  remaining: number; // budget - spent (negative = over)
+  status: CategoryBudgetStatus;
+}
+
+export interface CategoryBudgetPlan {
+  budgets: CategoryBudget[];
+  fromHistory: boolean; // true when based on the user's own past months
+  monthsOfHistory: number;
+  unallocated: number; // part of the variable budget left as buffer
+}
+
+/** Variable spending per category for one month, skipping non-budget categories. */
+function budgetableSpend(data: AppData, month: string): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const e of data.expenses) {
+    if (!isInMonth(e.date, month) || NON_BUDGET_CATEGORIES.has(e.category)) continue;
+    map.set(e.category, (map.get(e.category) ?? 0) + e.amount);
+  }
+  return map;
+}
+
+export function computeCategoryBudgets(data: AppData, s: MonthSummary): CategoryBudgetPlan {
+  // 1. Gather history: the closest past months that actually have expenses.
+  const histTotals = new Map<string, number>();
+  let monthsOfHistory = 0;
+  let probe = s.month;
+  for (let i = 0; i < HISTORY_LOOKBACK && monthsOfHistory < HISTORY_MONTHS; i++) {
+    probe = addMonths(probe, -1);
+    const spend = budgetableSpend(data, probe);
+    if (spend.size === 0) continue;
+    monthsOfHistory++;
+    for (const [cat, amount] of spend) {
+      histTotals.set(cat, (histTotals.get(cat) ?? 0) + amount);
+    }
+  }
+  const fromHistory = monthsOfHistory >= MIN_HISTORY_MONTHS;
+
+  // 2. The "typical" month: historical averages, or default shares of the budget.
+  const typical = new Map<string, number>();
+  if (fromHistory) {
+    for (const [cat, total] of histTotals) typical.set(cat, total / monthsOfHistory);
+  } else {
+    for (const [cat, share] of Object.entries(DEFAULT_SHARES)) {
+      typical.set(cat, share * s.variableBudget);
+    }
+  }
+
+  // 3. Fit the typical month into this month's variable budget. Needs keep
+  //    their typical amount as long as possible; wants absorb the squeeze.
+  let needTotal = 0;
+  let wantTotal = 0;
+  for (const [cat, amount] of typical) {
+    if (NEED_CATEGORIES.has(cat)) needTotal += amount;
+    else wantTotal += amount;
+  }
+  let needScale = 1;
+  let wantScale = 1;
+  if (needTotal + wantTotal > s.variableBudget) {
+    if (needTotal >= s.variableBudget) {
+      needScale = needTotal > 0 ? s.variableBudget / needTotal : 0;
+      wantScale = 0;
+    } else {
+      wantScale = wantTotal > 0 ? (s.variableBudget - needTotal) / wantTotal : 0;
+    }
+  }
+
+  // 4. Build the rows: every typical category plus anything spent this month.
+  const spentNow = budgetableSpend(data, s.month);
+  const categories = new Set([...typical.keys(), ...spentNow.keys()]);
+  const budgets: CategoryBudget[] = [];
+  for (const category of categories) {
+    const isNeed = NEED_CATEGORIES.has(category);
+    const budget = (typical.get(category) ?? 0) * (isNeed ? needScale : wantScale);
+    const spent = spentNow.get(category) ?? 0;
+    if (budget < 0.5 && spent === 0) continue; // nothing to say about this one
+
+    let status: CategoryBudgetStatus = 'ok';
+    if (spent > budget) {
+      status = 'over';
+    } else if (
+      s.isCurrentMonth &&
+      budget > 0 &&
+      spent / budget > s.expectedPaceFraction + 0.15
+    ) {
+      status = 'fast';
+    }
+    budgets.push({ category, isNeed, budget, spent, remaining: budget - spent, status });
+  }
+  budgets.sort((a, b) => b.budget - a.budget || b.spent - a.spent);
+
+  const allocated = budgets.reduce((sum, b) => sum + b.budget, 0);
+  return {
+    budgets,
+    fromHistory,
+    monthsOfHistory,
+    unallocated: Math.max(0, s.variableBudget - allocated),
+  };
 }
 
 // ---------------------------------------------------------------------------

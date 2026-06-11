@@ -2,12 +2,13 @@ import { useMemo } from 'react';
 import { useStore } from '../store';
 import {
   computeAdvice,
+  computeCategoryBudgets,
   computeMonthSummary,
   computeWarnings,
   spendingByCategory,
 } from '../lib/calculations';
 import { eur } from '../lib/format';
-import { Card, Stat, WarningCard } from '../components/ui';
+import { Badge, Card, ProgressBar, Stat, WarningCard } from '../components/ui';
 import { BarList, ProportionBar } from '../components/charts';
 
 export default function Dashboard() {
@@ -25,6 +26,10 @@ export default function Dashboard() {
   const categories = useMemo(
     () => spendingByCategory(data, selectedMonth),
     [data, selectedMonth],
+  );
+  const budgetPlan = useMemo(
+    () => computeCategoryBudgets(data, summary),
+    [data, summary],
   );
 
   const remainingTone =
@@ -130,6 +135,59 @@ export default function Dashboard() {
           ))}
         </ul>
       </Card>
+
+      {/* Recommended category budgets */}
+      {!noIncome && budgetPlan.budgets.length > 0 && (
+        <Card>
+          <div className="card-title">Recommended category budgets</div>
+          <p className="section-subtitle">
+            {budgetPlan.fromHistory
+              ? `Based on your average spending over the last ${budgetPlan.monthsOfHistory} months, fitted into this month's variable budget of ${eur(summary.variableBudget)}.`
+              : `Starter suggestion based on this month's variable budget of ${eur(summary.variableBudget)} — once a couple of months of expenses exist, this adapts to your actual habits.`}
+          </p>
+          <div className="barlist">
+            {budgetPlan.budgets.map((b) => {
+              const tone =
+                b.status === 'over' ? 'danger' : b.status === 'fast' ? 'warning' : 'safe';
+              const fraction =
+                b.budget > 0 ? b.spent / b.budget : b.spent > 0 ? 1 : 0;
+              const weeklyHint =
+                summary.isCurrentMonth && summary.daysLeft > 0 && b.remaining > 0
+                  ? ` · about ${eur((b.remaining / summary.daysLeft) * Math.min(7, summary.daysLeft))} per week`
+                  : '';
+              return (
+                <div className="barlist-row" key={b.category}>
+                  <div className="barlist-top">
+                    <span className="barlist-label">
+                      {b.category} {b.isNeed && <Badge tone="info">need</Badge>}
+                    </span>
+                    <span className="barlist-value">
+                      {eur(b.spent)} of {eur(b.budget)}
+                    </span>
+                  </div>
+                  <ProgressBar fraction={fraction} tone={tone} />
+                  <div className="stat-hint">
+                    {b.status === 'over'
+                      ? `Over by ${eur(b.spent - b.budget)}`
+                      : b.status === 'fast'
+                        ? `${eur(b.remaining)} left, but you are spending it faster than the month is passing${weeklyHint}`
+                        : `${eur(b.remaining)} left${weeklyHint}`}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {budgetPlan.unallocated >= 1 && (
+            <>
+              <div className="divider" />
+              <div className="stat-hint">
+                {eur(budgetPlan.unallocated)} of the variable budget is not assigned to any
+                category — that is your buffer.
+              </div>
+            </>
+          )}
+        </Card>
+      )}
 
       {/* Charts */}
       <div className="grid grid-2">

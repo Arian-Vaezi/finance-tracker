@@ -42,6 +42,10 @@ React + TypeScript, financial logic, and deployment.
 - **Bank accounts** — manual balances and account types.
 - **Debt tracking** — separate ledger with repayment progress; clearly *not* free money.
 - **Safe-to-spend engine** — daily and weekly limits from what's left in the month.
+- **Recommended category budgets** — splits the month's variable budget across
+  categories (groceries, eating out, …) based on your own spending history (with
+  sensible defaults until enough history exists). Needs are protected on tight
+  months — wants get squeezed first — and each category gets its own pace warning.
 - **Warning engine** — automatic alerts when:
   - fixed costs exceed 70% of income,
   - you're spending faster than the calendar,
@@ -177,7 +181,7 @@ src/
   defaults.ts           Fictional demo data + empty dataset (no real data)
   index.css             Global styles (mobile-first, theme variables)
   lib/
-    calculations.ts     Finance engine: summaries, warnings, advice, panic, budget month
+    calculations.ts     Finance engine: summaries, warnings, advice, panic, category budgets
     format.ts           Currency / date / month helpers
     csv.ts              CSV export + JSON backup/download
     gigShift.ts           Split-payment helper for variable gig income
@@ -206,7 +210,7 @@ fixed_costs           = sum of active fixed monthly costs
 variable_spending     = sum of expense entries in the month
 remaining_money       = monthly_income − fixed_costs − variable_spending
 safe_to_spend_per_day = remaining_money / days_left (incl. today)
-weekly_limit          = remaining_money / weeks_left
+weekly_limit          = safe_to_spend_per_day × min(7, days_left)
 
 real_net_worth        = total_bank − total_debt
 ```
@@ -219,7 +223,7 @@ real_net_worth        = total_bank − total_debt
 - End-to-end encryption for cloud-synced data (currently last-write-wins).
 - Real-time multi-device updates (live sync) instead of pull-on-open.
 - Unit tests for the finance engine (the pure `lib/` layer is built for it).
-- Category budgets and goals.
+- Manual overrides for the recommended category budgets, and savings goals.
 
 ## License
 
