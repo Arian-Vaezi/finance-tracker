@@ -126,6 +126,8 @@ interface StoreValue {
   updateDebt: (id: string, patch: Partial<Debt>) => void;
   deleteDebt: (id: string) => void;
 
+  setSavingsGoal: (amount: number) => void;
+
   replaceData: (data: AppData) => void;
   resetDemoData: () => void;
   clearAllData: () => void;
@@ -298,6 +300,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addDebt: (e) => update((d) => ({ ...d, debts: withItem(d.debts, e) })),
       updateDebt: (id, p) => update((d) => ({ ...d, debts: patchItem(d.debts, id, p) })),
       deleteDebt: (id) => update((d) => ({ ...d, debts: removeItem(d.debts, id) })),
+
+      setSavingsGoal: (amount) =>
+        update((d) => ({ ...d, savingsGoal: amount > 0 ? amount : undefined })),
 
       replaceData: (incoming) =>
         setData({ ...incoming, version: incoming.version ?? DATA_VERSION }),

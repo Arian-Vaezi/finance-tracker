@@ -31,6 +31,9 @@ export function makeDemoData(now: Date = new Date()): AppData {
   return {
     version: DATA_VERSION,
 
+    // Put €50 aside each month before anything counts as spendable.
+    savingsGoal: 50,
+
     // Monthly income -> €1,350 total (variable, entered per month).
     incomes: [
       { id: uid(), date: day(1), source: 'Part-time job', amount: 900, note: 'Monthly wage' },

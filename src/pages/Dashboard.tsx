@@ -33,9 +33,9 @@ export default function Dashboard() {
   );
 
   const remainingTone =
-    summary.remainingMoney < 0
+    summary.spendableRemaining < 0
       ? 'danger'
-      : summary.remainingMoney < 250
+      : summary.spendableRemaining < 250
         ? 'warning'
         : 'safe';
 
@@ -59,10 +59,14 @@ export default function Dashboard() {
               </>
             ) : (
               <>
-                <div className="big">{eur(Math.max(0, summary.remainingMoney))}</div>
+                <div className="big">{eur(Math.max(0, summary.spendableRemaining))}</div>
                 <div className="hero-sub">
                   {summary.daysLeft > 0
-                    ? `About ${eur(summary.safeToSpendPerDay)} per day · ${eur(summary.weeklyLimit)} per week · ${summary.daysLeft} days left (incl. today)`
+                    ? `About ${eur(summary.safeToSpendPerDay)} per day · ${eur(summary.weeklyLimit)} per week · ${summary.daysLeft} days left (incl. today)${
+                        summary.savingsGoal > 0
+                          ? ` · ${eur(summary.savingsGoal)} set aside for savings`
+                          : ''
+                      }`
                     : 'This month is over.'}
                 </div>
               </>
@@ -116,6 +120,20 @@ export default function Dashboard() {
           value={noIncome ? '—' : eur(summary.safeToSpendPerDay)}
           tone={noIncome ? 'neutral' : remainingTone}
         />
+        {summary.savingsGoal > 0 && (
+          <Stat
+            label="Savings goal"
+            value={eur(summary.savingsGoal)}
+            tone={
+              noIncome
+                ? 'neutral'
+                : summary.remainingMoney >= summary.savingsGoal
+                  ? 'safe'
+                  : 'warning'
+            }
+            hint="set aside before spending"
+          />
+        )}
         <Stat label="Total bank balance" value={eur(summary.totalBank)} />
         <Stat label="Total debt" value={eur(summary.totalDebt)} tone={summary.totalDebt > 0 ? 'warning' : 'neutral'} />
         <Stat

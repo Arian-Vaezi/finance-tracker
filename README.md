@@ -42,6 +42,9 @@ React + TypeScript, financial logic, and deployment.
 - **Bank accounts** — manual balances and account types.
 - **Debt tracking** — separate ledger with repayment progress; clearly *not* free money.
 - **Safe-to-spend engine** — daily and weekly limits from what's left in the month.
+- **Monthly savings goal** — optionally set an amount aside each month *before* anything
+  counts as spendable; warnings fire when spending starts eating into it. (Panic Mode
+  deliberately ignores the goal — surviving the month comes first.)
 - **Recommended category budgets** — splits the month's variable budget across
   categories (groceries, eating out, …) based on your own spending history (with
   sensible defaults until enough history exists). Needs are protected on tight
@@ -209,7 +212,8 @@ monthly_income        = sum of income whose budget month is the month
 fixed_costs           = sum of active fixed monthly costs
 variable_spending     = sum of expense entries in the month
 remaining_money       = monthly_income − fixed_costs − variable_spending
-safe_to_spend_per_day = remaining_money / days_left (incl. today)
+spendable_remaining   = remaining_money − savings_goal (optional, default 0)
+safe_to_spend_per_day = spendable_remaining / days_left (incl. today)
 weekly_limit          = safe_to_spend_per_day × min(7, days_left)
 
 real_net_worth        = total_bank − total_debt
@@ -223,7 +227,7 @@ real_net_worth        = total_bank − total_debt
 - End-to-end encryption for cloud-synced data (currently last-write-wins).
 - Real-time multi-device updates (live sync) instead of pull-on-open.
 - Unit tests for the finance engine (the pure `lib/` layer is built for it).
-- Manual overrides for the recommended category budgets, and savings goals.
+- Manual overrides for the recommended category budgets.
 
 ## License
 

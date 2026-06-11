@@ -13,8 +13,10 @@
 //                            never double-counted here)
 //   remaining_after_fixed = monthly_income - fixed_costs
 //   remaining_money       = monthly_income - fixed_costs - variable_spending
+//   savings_goal          = optional amount set aside each month before spending
+//   spendable_remaining   = remaining_money - savings_goal
 //   days_left             = days remaining in the month, including today
-//   safe_to_spend_per_day = remaining_money / days_left
+//   safe_to_spend_per_day = spendable_remaining / days_left
 //   weekly_limit          = safe_to_spend_per_day * min(7, days_left)
 //
 //   total_bank   = sum of account balances
@@ -42,7 +44,9 @@ export interface MonthSummary {
   fixedCosts: number;
   variableSpending: number;
   remainingAfterFixed: number;
-  remainingMoney: number;
+  remainingMoney: number; // actual money left (savings goal still inside)
+  savingsGoal: number;
+  spendableRemaining: number; // remainingMoney - savingsGoal: what safe-to-spend uses
 
   // Time
   totalDays: number;
@@ -136,16 +140,22 @@ export function computeMonthSummary(
   const remainingAfterFixed = monthlyIncome - fixedCosts;
   const remainingMoney = remainingAfterFixed - variableSpending;
 
+  // The savings goal is set aside up front: everything "safe to spend" is
+  // computed from what's left after it. No goal = spend-to-zero.
+  const savingsGoal = Math.max(0, data.savingsGoal ?? 0);
+  const spendableRemaining = remainingMoney - savingsGoal;
+
   // Safe-to-spend: spread what's left across the days that remain.
   // When the month is over (daysLeft === 0) we just surface the leftover number.
   // The weekly limit is the daily pace over the next 7 days (or fewer if the
   // month ends sooner), so the daily and weekly numbers always agree.
-  const safeToSpendPerDay = daysLeft > 0 ? remainingMoney / daysLeft : remainingMoney;
+  const safeToSpendPerDay =
+    daysLeft > 0 ? spendableRemaining / daysLeft : spendableRemaining;
   const weeklyLimit =
-    daysLeft > 0 ? safeToSpendPerDay * Math.min(7, daysLeft) : remainingMoney;
+    daysLeft > 0 ? safeToSpendPerDay * Math.min(7, daysLeft) : spendableRemaining;
 
   // Pace: are we burning the variable budget faster than time is passing?
-  const variableBudget = Math.max(0, remainingAfterFixed);
+  const variableBudget = Math.max(0, remainingAfterFixed - savingsGoal);
   const pctVariableUsed = variableBudget > 0 ? variableSpending / variableBudget : 0;
   const expectedPaceFraction = totalDays > 0 ? daysElapsed / totalDays : 0;
   const dailyPace = daysElapsed > 0 ? variableSpending / daysElapsed : 0;
@@ -163,6 +173,8 @@ export function computeMonthSummary(
     variableSpending,
     remainingAfterFixed,
     remainingMoney,
+    savingsGoal,
+    spendableRemaining,
     totalDays,
     daysElapsed,
     daysLeft,
@@ -226,6 +238,37 @@ export function computeWarnings(
       message: `Income minus fixed costs minus spending is ${eur(
         s.remainingMoney,
       )}. You are dipping into savings or borrowed money.`,
+    });
+  }
+
+  // Savings goal at risk: still money left, but less than the goal...
+  if (
+    s.savingsGoal > 0 &&
+    s.monthlyIncome > 0 &&
+    s.remainingMoney >= 0 &&
+    s.remainingMoney < s.savingsGoal
+  ) {
+    out.push({
+      level: 'warning',
+      title: 'You are eating into your savings goal',
+      message: `Only ${eur(s.remainingMoney)} is left, but your savings goal is ${eur(
+        s.savingsGoal,
+      )}. Every further euro spent comes out of your savings.`,
+    });
+  } else if (
+    // ...or current pace projects to land below it at month end.
+    s.savingsGoal > 0 &&
+    s.monthlyIncome > 0 &&
+    s.isCurrentMonth &&
+    s.projectedRemaining >= 0 &&
+    s.projectedRemaining < s.savingsGoal
+  ) {
+    out.push({
+      level: 'warning',
+      title: 'On pace to miss your savings goal',
+      message: `At your current pace about ${eur(
+        s.projectedRemaining,
+      )} will be left at month end - short of your ${eur(s.savingsGoal)} savings goal.`,
     });
   }
 
@@ -314,9 +357,9 @@ export function computeWarnings(
     out.push({
       level: 'safe',
       title: 'You are on track',
-      message: `You have ${eur(
-        s.remainingMoney,
-      )} left for the rest of the month - about ${eur(s.safeToSpendPerDay)} per day.`,
+      message: `You have ${eur(s.spendableRemaining)} left to spend this month${
+        s.savingsGoal > 0 ? ` (with ${eur(s.savingsGoal)} set aside for savings)` : ''
+      } - about ${eur(s.safeToSpendPerDay)} per day.`,
     });
   }
 
@@ -353,6 +396,16 @@ export function computeAdvice(s: MonthSummary): string[] {
       `You have already spent ${pct(s.pctVariableUsed)} of your variable budget (${eur(
         s.variableSpending,
       )} of ${eur(s.variableBudget)}).`,
+    );
+  }
+
+  if (s.savingsGoal > 0 && s.monthlyIncome > 0) {
+    tips.push(
+      s.remainingMoney >= s.savingsGoal
+        ? `${eur(s.savingsGoal)} is set aside for savings this month - the safe-to-spend numbers already account for it.`
+        : `Your ${eur(s.savingsGoal)} savings goal is no longer fully covered: only ${eur(
+            Math.max(0, s.remainingMoney),
+          )} is left in the month.`,
     );
   }
 
@@ -568,10 +621,13 @@ export function computePanic(data: AppData, s: MonthSummary): PanicInfo {
   const afterEssentials =
     s.monthlyIncome - (rent?.amount ?? 0) - (health?.amount ?? 0);
 
-  // In panic mode, almost everything optional is cut, so the weekly safe-spend
-  // is effectively the food budget. Never suggest a negative number.
-  const weeklyFoodBudget = Math.max(0, s.weeklyLimit);
-  const dailyFoodBudget = Math.max(0, s.safeToSpendPerDay);
+  // In panic mode, almost everything optional is cut and saving is paused -
+  // every remaining euro goes to surviving the month, so the food budget is
+  // computed from remainingMoney (ignoring the savings goal). Never negative.
+  const dailyFoodBudget =
+    s.daysLeft > 0 ? Math.max(0, s.remainingMoney / s.daysLeft) : Math.max(0, s.remainingMoney);
+  const weeklyFoodBudget =
+    s.daysLeft > 0 ? dailyFoodBudget * Math.min(7, s.daysLeft) : Math.max(0, s.remainingMoney);
 
   const cutFirst = data.fixedCosts
     .filter((f) => f.active && !f.essential)

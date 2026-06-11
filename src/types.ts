@@ -84,6 +84,10 @@ export interface AppData {
   fixedCosts: FixedCost[];
   accounts: BankAccount[];
   debts: Debt[];
+  // Optional amount (€) to set aside every month BEFORE anything is treated as
+  // spendable. The safe-to-spend numbers and category budgets are computed from
+  // what's left after this goal. Absent/0 = spend-to-zero (old behaviour).
+  savingsGoal?: number;
 }
 
 // Suggestions only - the source field is still free text so you can type anything.

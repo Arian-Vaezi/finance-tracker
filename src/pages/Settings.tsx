@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react';
 import { useStore, isValidAppData } from '../store';
 import { exportBackupJSON, exportTransactionsCSV } from '../lib/csv';
-import { Button, Card, ConfirmButton, SectionHeader, Segmented } from '../components/ui';
+import { Button, Card, ConfirmButton, Field, SectionHeader, Segmented } from '../components/ui';
 import { AccountSync } from '../components/AccountSync';
 
 export default function Settings() {
-  const { data, mode, setMode, replaceData, resetDemoData, clearAllData } = useStore();
+  const { data, mode, setMode, replaceData, resetDemoData, clearAllData, setSavingsGoal } =
+    useStore();
   const fileInput = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
 
@@ -61,6 +62,29 @@ export default function Settings() {
           <strong>Demo</strong> shows fictional example data for sharing or screenshots. The two
           datasets are stored separately and never mix.
         </p>
+      </Card>
+
+      {/* Savings goal */}
+      <Card>
+        <div className="card-title">Monthly savings goal</div>
+        <p className="muted" style={{ fontSize: 13.5, marginBottom: 14 }}>
+          Set an amount to put aside every month <strong>before</strong> spending. The
+          safe-to-spend numbers and category budgets are calculated from what's left after this
+          goal. Leave it at 0 to plan with every euro spendable.
+        </p>
+        <Field label="Amount per month (€)">
+          <input
+            type="number"
+            min={0}
+            step={10}
+            value={data.savingsGoal ?? ''}
+            placeholder="0"
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              setSavingsGoal(Number.isFinite(n) ? n : 0);
+            }}
+          />
+        </Field>
       </Card>
 
       {/* Account & cloud sync */}
