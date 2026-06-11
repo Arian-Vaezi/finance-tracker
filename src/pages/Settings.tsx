@@ -1,6 +1,8 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useStore, isValidAppData } from '../store';
 import { exportBackupJSON, exportTransactionsCSV } from '../lib/csv';
+import { suggestSavingsGoal } from '../lib/calculations';
+import { currentMonth, eur } from '../lib/format';
 import { Button, Card, ConfirmButton, Field, SectionHeader, Segmented } from '../components/ui';
 import { AccountSync } from '../components/AccountSync';
 
@@ -9,6 +11,8 @@ export default function Settings() {
     useStore();
   const fileInput = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
+
+  const suggestion = useMemo(() => suggestSavingsGoal(data, currentMonth()), [data]);
 
   const counts = {
     income: data.incomes.length,
@@ -85,6 +89,20 @@ export default function Settings() {
             }}
           />
         </Field>
+        {suggestion.amount > 0 && suggestion.amount !== (data.savingsGoal ?? 0) && (
+          <>
+            <p className="muted" style={{ fontSize: 13.5, marginTop: 12, marginBottom: 10 }}>
+              Suggested for you: <strong>{eur(suggestion.amount)}</strong> — about 20% of
+              what's typically left after fixed costs ({eur(suggestion.avgAfterFixed)},
+              averaged over {suggestion.monthsUsed}{' '}
+              {suggestion.monthsUsed === 1 ? 'month' : 'months'} of income). Saving a share
+              of what you can actually spare beats a fixed rule when income varies.
+            </p>
+            <Button variant="secondary" onClick={() => setSavingsGoal(suggestion.amount)}>
+              Use {eur(suggestion.amount)}
+            </Button>
+          </>
+        )}
       </Card>
 
       {/* Account & cloud sync */}

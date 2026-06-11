@@ -43,8 +43,10 @@ React + TypeScript, financial logic, and deployment.
 - **Debt tracking** — separate ledger with repayment progress; clearly *not* free money.
 - **Safe-to-spend engine** — daily and weekly limits from what's left in the month.
 - **Monthly savings goal** — optionally set an amount aside each month *before* anything
-  counts as spendable; warnings fire when spending starts eating into it. (Panic Mode
-  deliberately ignores the goal — surviving the month comes first.)
+  counts as spendable; warnings fire when spending starts eating into it. The app suggests
+  an amount (~20% of what's typically left after fixed costs — a variable-income-friendly
+  take on the 50/30/20 rule). Panic Mode deliberately ignores the goal — surviving the
+  month comes first.
 - **Recommended category budgets** — splits the month's variable budget across
   categories (groceries, eating out, …) based on your own spending history (with
   sensible defaults until enough history exists). Needs are protected on tight

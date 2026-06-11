@@ -443,6 +443,48 @@ export function spendingByCategory(data: AppData, month: string): CategoryTotal[
 }
 
 // ---------------------------------------------------------------------------
+// Suggested savings goal
+// ---------------------------------------------------------------------------
+// A pragmatic take on the classic "save 20% of income" rule for people whose
+// fixed costs eat a big share of it: suggest 20% of what is typically LEFT
+// after fixed costs, averaged over recent months of income, rounded to €5.
+
+const SAVINGS_LOOKBACK = 6; // scan up to this many months (incl. selected)...
+const SAVINGS_MONTHS = 3; // ...for up to this many months with income
+const SAVINGS_RATE = 0.2;
+
+export interface SavingsSuggestion {
+  amount: number; // suggested goal; 0 = nothing sensible to suggest
+  monthsUsed: number;
+  avgIncome: number;
+  avgAfterFixed: number;
+}
+
+export function suggestSavingsGoal(data: AppData, month: string): SavingsSuggestion {
+  const incomes: number[] = [];
+  let probe = month; // the selected month counts too, then walk backwards
+  for (let i = 0; i < SAVINGS_LOOKBACK && incomes.length < SAVINGS_MONTHS; i++) {
+    const total = data.incomes
+      .filter((inc) => budgetMonthOf(inc) === probe)
+      .reduce((s, inc) => s + inc.amount, 0);
+    if (total > 0) incomes.push(total);
+    probe = addMonths(probe, -1);
+  }
+  if (incomes.length === 0) {
+    return { amount: 0, monthsUsed: 0, avgIncome: 0, avgAfterFixed: 0 };
+  }
+  const avgIncome = incomes.reduce((s, v) => s + v, 0) / incomes.length;
+  const avgAfterFixed = avgIncome - totalFixedCosts(data);
+  const rounded = Math.floor((Math.max(0, avgAfterFixed) * SAVINGS_RATE) / 5) * 5;
+  return {
+    amount: rounded >= 10 ? rounded : 0, // below €10 a goal is just noise
+    monthsUsed: incomes.length,
+    avgIncome,
+    avgAfterFixed,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Recommended category budgets
 // ---------------------------------------------------------------------------
 // Split this month's variable budget across spending categories. With enough
