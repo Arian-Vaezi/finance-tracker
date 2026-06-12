@@ -56,6 +56,10 @@ export interface ExpenseEntry {
   amount: number;
   accountId: string; // references BankAccount.id ("" = unassigned)
   note?: string;
+  // True once this expense has been applied to the linked account balance.
+  // Older saved expenses do not have this flag, so edits can avoid refunding
+  // money that was never subtracted in the first place.
+  balanceImpactApplied?: boolean;
 }
 
 export interface FixedCost {

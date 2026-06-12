@@ -145,6 +145,37 @@ function removeItem<T extends { id: string }>(list: T[], id: string): T[] {
   return list.filter((item) => item.id !== id);
 }
 
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function affectsAccountBalance(expense: Pick<ExpenseEntry, 'accountId' | 'category' | 'amount'>) {
+  return (
+    expense.accountId !== '' &&
+    expense.category !== 'transfer' &&
+    Number.isFinite(expense.amount) &&
+    expense.amount > 0
+  );
+}
+
+function applyAccountDelta(accounts: BankAccount[], accountId: string, delta: number): BankAccount[] {
+  if (!accountId) return accounts;
+  return accounts.map((account) =>
+    account.id === accountId
+      ? { ...account, balance: roundMoney(account.balance + delta) }
+      : account,
+  );
+}
+
+function applyExpenseBalanceChange(
+  accounts: BankAccount[],
+  expense: Pick<ExpenseEntry, 'accountId' | 'category' | 'amount'>,
+  direction: 1 | -1,
+): BankAccount[] {
+  if (!affectsAccountBalance(expense)) return accounts;
+  return applyAccountDelta(accounts, expense.accountId, direction * expense.amount);
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const { session, configured } = useAuth();
   const userId = session?.user.id ?? null;
@@ -284,9 +315,52 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updateIncome: (id, p) => update((d) => ({ ...d, incomes: patchItem(d.incomes, id, p) })),
       deleteIncome: (id) => update((d) => ({ ...d, incomes: removeItem(d.incomes, id) })),
 
-      addExpense: (e) => update((d) => ({ ...d, expenses: withItem(d.expenses, e) })),
-      updateExpense: (id, p) => update((d) => ({ ...d, expenses: patchItem(d.expenses, id, p) })),
-      deleteExpense: (id) => update((d) => ({ ...d, expenses: removeItem(d.expenses, id) })),
+      addExpense: (e) =>
+        update((d) => {
+          const balanceImpactApplied = affectsAccountBalance(e);
+          const entry = { ...e, balanceImpactApplied };
+          return {
+            ...d,
+            expenses: withItem(d.expenses, entry),
+            accounts: balanceImpactApplied
+              ? applyExpenseBalanceChange(d.accounts, entry, -1)
+              : d.accounts,
+          };
+        }),
+      updateExpense: (id, p) =>
+        update((d) => {
+          const existing = d.expenses.find((expense) => expense.id === id);
+          if (!existing) return d;
+          const next = { ...existing, ...p };
+          const nextBalanceImpactApplied = affectsAccountBalance(next);
+          let accounts = d.accounts;
+          if (existing.balanceImpactApplied) {
+            accounts = applyExpenseBalanceChange(accounts, existing, 1);
+          }
+          if (nextBalanceImpactApplied) {
+            accounts = applyExpenseBalanceChange(accounts, next, -1);
+          }
+          return {
+            ...d,
+            expenses: patchItem(d.expenses, id, {
+              ...p,
+              balanceImpactApplied: nextBalanceImpactApplied,
+            }),
+            accounts,
+          };
+        }),
+      deleteExpense: (id) =>
+        update((d) => {
+          const existing = d.expenses.find((expense) => expense.id === id);
+          if (!existing) return d;
+          return {
+            ...d,
+            expenses: removeItem(d.expenses, id),
+            accounts: existing.balanceImpactApplied
+              ? applyExpenseBalanceChange(d.accounts, existing, 1)
+              : d.accounts,
+          };
+        }),
 
       addFixedCost: (e) => update((d) => ({ ...d, fixedCosts: withItem(d.fixedCosts, e) })),
       updateFixedCost: (id, p) =>

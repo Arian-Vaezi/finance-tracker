@@ -34,7 +34,7 @@ export default function Accounts() {
     <div className="stack">
       <SectionHeader
         title="Bank accounts"
-        subtitle="Update balances manually whenever you check your banking app."
+        subtitle="Expense edits update linked account balances automatically; you can still correct balances manually."
         action={<Button onClick={() => setAdding(true)}>+ Add account</Button>}
       />
 
