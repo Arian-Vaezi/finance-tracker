@@ -18,12 +18,12 @@ export interface BankAccount {
 export interface IncomeEntry {
   id: string;
   date: string; // ISO date: "YYYY-MM-DD" - when the money actually arrived
-  source: string; // e.g. part-time job, Gig, family, refund, other
+  source: string; // e.g. part-time job, gig, family, refund, other
   amount: number;
   note?: string;
   // Optional "budget month" ("YYYY-MM"): the month this money is meant to be
   // spent in. Defaults to the month of `date` when omitted. Lets income you earn
-  // one month but spend the next (e.g. Gig early payouts) count toward the
+  // one month but spend the next (e.g. gig early payouts) count toward the
   // month you actually spend it.
   budgetMonth?: string;
 }
@@ -101,7 +101,7 @@ export interface AppData {
 // Suggestions only - the source field is still free text so you can type anything.
 export const INCOME_SOURCES = [
   'part-time job',
-  'Gig',
+  'gig',
   'family',
   'refund',
   'other',

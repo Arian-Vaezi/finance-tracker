@@ -1,6 +1,7 @@
 # 💶 Finance Tracker
 
-A clean, mobile-first **personal finance tracker** built for the reality of **variable monthly income**. It turns raw numbers into plain-language
+A clean, mobile-first **personal finance tracker** built for the reality of
+**variable monthly income**. It turns raw numbers into plain-language
 advice: how much is safe to spend per day, whether fixed costs are too high, and —
 crucially — how much money is *really* yours once debt is subtracted.
 
@@ -23,13 +24,17 @@ crucially — how much money is *really* yours once debt is subtracted.
 
 ## Why I built it
 
-Most budgeting apps assume a fixed salary. Mine doesn't exist — my income changes every month, some of it arrives late, and some of it may be borrowed. They can make a balance look healthier than it really is. I wanted one that answers a single question honestly:
+Most budgeting apps assume a fixed monthly salary. This one is built for the
+opposite case — **variable income** that changes month to month, sometimes
+arrives late, and sits in an account next to money that's actually borrowed.
+Tools that assume a steady paycheck can make a balance look healthier than it
+really is. The app answers a single question honestly:
 
 > *"Given everything — variable income, fixed bills, and debt — how much can I
 > actually spend today without getting into trouble?"*
 
-So I built it, and used it as a portfolio project to practise production-quality
-React + TypeScript, financial logic, and deployment.
+It doubles as a portfolio project: production-quality React + TypeScript,
+real financial logic, and deployment.
 
 ## Features
 
@@ -192,7 +197,7 @@ src/
     calculations.ts     Finance engine: summaries, warnings, advice, panic, category budgets
     format.ts           Currency / date / month helpers
     csv.ts              CSV export + JSON backup/download
-    gigShift.ts           Split-payment helper for variable gig income
+    gigShift.ts         Split-payment helper for variable gig income
     supabase.ts         Supabase client (no-op when unconfigured)
     cloud.ts            Pull/push the user's data to Supabase
   components/

@@ -27,7 +27,7 @@ export default function Income() {
   const { data, selectedMonth, addIncome, updateIncome, deleteIncome } = useStore();
   const [editing, setEditing] = useState<IncomeEntry | null>(null);
   const [adding, setAdding] = useState(false);
-  const [gigShift, setGig] = useState(false);
+  const [gigShift, setGigShift] = useState(false);
 
   const entries = useMemo(
     () =>
@@ -46,7 +46,7 @@ export default function Income() {
         subtitle="Enter each payment you receive. They are summed automatically."
         action={
           <div className="btn-row">
-            <Button variant="secondary" onClick={() => setGig(true)}>
+            <Button variant="secondary" onClick={() => setGigShift(true)}>
               + Gig shift
             </Button>
             <Button onClick={() => setAdding(true)}>+ Add income</Button>
@@ -116,10 +116,10 @@ export default function Income() {
       {gigShift && (
         <GigShiftForm
           month={selectedMonth}
-          onClose={() => setGig(false)}
+          onClose={() => setGigShift(false)}
           onSave={(entries) => {
             entries.forEach((e) => addIncome(e));
-            setGig(false);
+            setGigShift(false);
           }}
         />
       )}
@@ -165,7 +165,7 @@ function IncomeForm({
         <Field label="Date">
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
-        <Field label="Source" hint="e.g. part-time job, Gig, family, refund">
+        <Field label="Source" hint="e.g. part-time job, gig, family, refund">
           <input
             list="income-sources"
             value={source}
@@ -246,10 +246,10 @@ function GigShiftForm({
   };
 
   return (
-    <Modal title="Log Gig shift" onClose={onClose}>
+    <Modal title="Log gig shift" onClose={onClose}>
       <p className="muted" style={{ fontSize: 13.5, marginTop: 0, marginBottom: 14 }}>
         Logs only the reliable early payout you receive the day after the shift. Because you
-        spend Gig money the following month, it is counted toward next month's budget. The
+        spend gig money the following month, it is counted toward next month's budget. The
         other half is pooled with your other shifts, taxed, and paid as one lump sum on the 15th
         of next month — add that manually when it lands, since the taxed amount can't be known now.
       </p>

@@ -2,7 +2,7 @@ import { IncomeEntry } from '../types';
 import { addMonths } from './format';
 
 // ---------------------------------------------------------------------------
-// Gig pays in two parts:
+// A gig shift pays in two parts:
 //   - an "early payout" of part of the shift, the day AFTER the shift (reliable)
 //   - the remaining halves of ALL the month's shifts are pooled, TAXED, and
 //     paid as one lump sum on the 15th of the FOLLOWING month
@@ -15,7 +15,7 @@ import { addMonths } from './format';
 
 type DraftIncome = Omit<IncomeEntry, 'id'>;
 
-export interface GigSplit {
+export interface GigShiftSplit {
   early: DraftIncome;
   remainder: DraftIncome;
 }
@@ -33,7 +33,7 @@ function round2(n: number): number {
 }
 
 /**
- * Split one Gig shift into its two real payments.
+ * Split one gig shift into its two real payments.
  * @param shiftDate ISO date ("YYYY-MM-DD") of the day you worked
  * @param total     total pay for the shift
  * @param earlyPct  percentage paid early (default 50)
@@ -42,7 +42,7 @@ export function splitGigShift(
   shiftDate: string,
   total: number,
   earlyPct = 50,
-): GigSplit {
+): GigShiftSplit {
   const [y, m, d] = shiftDate.split('-').map(Number);
 
   // Early payout: the day after the shift.
@@ -55,14 +55,14 @@ export function splitGigShift(
   const earlyAmount = round2(total * (earlyPct / 100));
   const remainderAmount = round2(total - earlyAmount); // keeps the two halves summing exactly
 
-  // You spend Gig money the month AFTER you earn it, so the early payout
+  // You spend gig money the month AFTER you earn it, so the early payout
   // (received in the work month) is budgeted to the following month.
   const spendMonth = addMonths(shiftDate.slice(0, 7), 1);
 
   return {
     early: {
       date: earlyDate,
-      source: 'Gig',
+      source: 'gig',
       amount: earlyAmount,
       budgetMonth: spendMonth,
       note: `Shift ${shiftDate} · early ${earlyPct}%`,
@@ -70,7 +70,7 @@ export function splitGigShift(
     // Display-only estimate (before tax). Not saved as income.
     remainder: {
       date: remainderDate,
-      source: 'Gig',
+      source: 'gig',
       amount: remainderAmount,
       note: `Shift ${shiftDate} · remainder estimate (before tax)`,
     },

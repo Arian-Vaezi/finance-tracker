@@ -33,7 +33,7 @@ import { addMonths, daysInMonth, eur, isInMonth, ordinal, pct, currentMonth } fr
 /**
  * The month an income counts toward in the budget: its explicit `budgetMonth`,
  * or the month of its date when none is set. This is how income earned one month
- * but spent the next (Gig early payouts) lands in the right month.
+ * but spent the next (gig early payouts) lands in the right month.
  */
 export function budgetMonthOf(i: IncomeEntry): string {
   return i.budgetMonth ?? i.date.slice(0, 7);
@@ -153,7 +153,7 @@ export function computeMonthSummary(
 
   // Income / spending for the month.
   // Income is grouped by its budget month (the month it is meant to fund), so a
-  // Gig early payout received this month but earmarked for next month counts
+  // A gig early payout received this month but earmarked for next month counts
   // toward next month's budget.
   const monthlyIncome = data.incomes
     .filter((i) => budgetMonthOf(i) === month)
