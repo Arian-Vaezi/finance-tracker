@@ -63,8 +63,16 @@ export interface FixedCost {
   name: string;
   amount: number;
   paymentDay?: number; // day of the month the money is debited (1..31)
-  active: boolean; // disabled fixed costs are kept but not counted
+  active: boolean; // false = no longer ongoing (see endMonth); kept for reference
   essential: boolean; // non-essential costs are the ones Panic Mode suggests cutting
+  // Optional effective window ("YYYY-MM"). A cost only counts toward months
+  // inside [startMonth, endMonth]. Both are inclusive and either can be omitted:
+  //   - startMonth absent => applies from the earliest data (open lower bound)
+  //   - endMonth absent    => still ongoing (open upper bound)
+  // This is what keeps cancelling a cost from silently rewriting past months:
+  // ending it stamps endMonth, so history before then is preserved.
+  startMonth?: string;
+  endMonth?: string;
 }
 
 export interface Debt {

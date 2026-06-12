@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store';
 import { FixedCost } from '../types';
-import { eur, ordinal } from '../lib/format';
+import { fixedCostsForMonth, isFixedCostInMonth } from '../lib/calculations';
+import { currentMonth, eur, monthLabel, ordinal } from '../lib/format';
 import {
   Badge,
   Button,
@@ -15,38 +16,55 @@ import {
 
 type Draft = Omit<FixedCost, 'id'>;
 
-const emptyDraft: Draft = {
-  name: '',
-  amount: 0,
-  paymentDay: undefined,
-  active: true,
-  essential: true,
-};
+// A brand-new cost defaults to starting THIS month, so adding it never
+// retroactively rewrites past months. Clear the "First month" field to apply it
+// to earlier months on purpose.
+function makeEmptyDraft(): Draft {
+  return {
+    name: '',
+    amount: 0,
+    paymentDay: undefined,
+    active: true,
+    essential: true,
+    startMonth: currentMonth(),
+    endMonth: undefined,
+  };
+}
+
+/** Short note about a cost's effective window, or null if it's open-ended/ongoing. */
+function windowBadge(f: FixedCost, thisMonth: string): { tone?: 'info'; text: string } | null {
+  if (f.endMonth && f.endMonth < thisMonth) return { text: `ended ${monthLabel(f.endMonth)}` };
+  if (f.endMonth) return { text: `until ${monthLabel(f.endMonth)}` };
+  if (f.startMonth && f.startMonth > thisMonth)
+    return { tone: 'info', text: `from ${monthLabel(f.startMonth)}` };
+  return null;
+}
 
 export default function FixedCosts() {
   const { data, addFixedCost, updateFixedCost, deleteFixedCost } = useStore();
   const [editing, setEditing] = useState<FixedCost | null>(null);
   const [adding, setAdding] = useState(false);
 
+  const thisMonth = currentMonth();
   const list = useMemo(
     () => [...data.fixedCosts].sort((a, b) => b.amount - a.amount),
     [data.fixedCosts],
   );
-  const activeTotal = list.filter((f) => f.active).reduce((s, f) => s + f.amount, 0);
+  const monthlyTotal = useMemo(() => fixedCostsForMonth(data, thisMonth), [data, thisMonth]);
 
   return (
     <div className="stack">
       <SectionHeader
         title="Fixed costs"
-        subtitle="Recurring monthly costs. Disable a cost to keep it but stop counting it."
+        subtitle="Recurring monthly costs. Ending a cost keeps it in past months and only stops counting it from next month."
         action={<Button onClick={() => setAdding(true)}>+ Add fixed cost</Button>}
       />
 
       <Card>
         <div className="spread" style={{ marginBottom: 14 }}>
-          <span className="muted">Active monthly total</span>
+          <span className="muted">This month's total</span>
           <span className="item-amount" style={{ fontSize: 18 }}>
-            {eur(activeTotal)}
+            {eur(monthlyTotal)}
           </span>
         </div>
 
@@ -54,43 +72,55 @@ export default function FixedCosts() {
           <EmptyState>No fixed costs yet.</EmptyState>
         ) : (
           <div className="item-list">
-            {list.map((f) => (
-              <div className={`item ${f.active ? '' : 'disabled-row'}`} key={f.id}>
-                <div className="item-main">
-                  <div className="item-title">
-                    {f.name}
-                    {!f.essential && <Badge tone="info">optional</Badge>}
-                    {!f.active && <Badge>disabled</Badge>}
+            {list.map((f) => {
+              const appliesNow = isFixedCostInMonth(f, thisMonth);
+              const win = windowBadge(f, thisMonth);
+              const ended = !!f.endMonth;
+              return (
+                <div className={`item ${appliesNow ? '' : 'disabled-row'}`} key={f.id}>
+                  <div className="item-main">
+                    <div className="item-title">
+                      {f.name}
+                      {!f.essential && <Badge tone="info">optional</Badge>}
+                      {win && <Badge tone={win.tone}>{win.text}</Badge>}
+                    </div>
+                    <div className="item-sub">
+                      {f.paymentDay
+                        ? `Debited on the ${ordinal(f.paymentDay)}`
+                        : 'No fixed payment date'}
+                    </div>
                   </div>
-                  <div className="item-sub">
-                    {f.paymentDay
-                      ? `Debited on the ${ordinal(f.paymentDay)}`
-                      : 'No fixed payment date'}
+                  <div className="item-amount">{eur(f.amount)}</div>
+                  <div className="item-actions">
+                    <Button
+                      variant="ghost"
+                      onClick={() =>
+                        updateFixedCost(
+                          f.id,
+                          ended
+                            ? { active: true, endMonth: undefined }
+                            : { active: false, endMonth: thisMonth },
+                        )
+                      }
+                      title={ended ? 'Resume this cost' : 'Stop counting this cost from next month'}
+                    >
+                      {ended ? 'Resume' : 'End'}
+                    </Button>
+                    <Button variant="ghost" onClick={() => setEditing(f)}>
+                      Edit
+                    </Button>
+                    <ConfirmButton onConfirm={() => deleteFixedCost(f.id)} />
                   </div>
                 </div>
-                <div className="item-amount">{eur(f.amount)}</div>
-                <div className="item-actions">
-                  <Button
-                    variant="ghost"
-                    onClick={() => updateFixedCost(f.id, { active: !f.active })}
-                    title={f.active ? 'Disable' : 'Enable'}
-                  >
-                    {f.active ? 'Disable' : 'Enable'}
-                  </Button>
-                  <Button variant="ghost" onClick={() => setEditing(f)}>
-                    Edit
-                  </Button>
-                  <ConfirmButton onConfirm={() => deleteFixedCost(f.id)} />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
 
       {(adding || editing) && (
         <FixedCostForm
-          initial={editing ?? emptyDraft}
+          initial={editing ?? makeEmptyDraft()}
           title={editing ? 'Edit fixed cost' : 'Add fixed cost'}
           onClose={() => {
             setAdding(false);
@@ -124,19 +154,23 @@ function FixedCostForm({
   const [paymentDay, setPaymentDay] = useState(
     initial.paymentDay ? String(initial.paymentDay) : '',
   );
-  const [active, setActive] = useState(initial.active);
+  const [startMonth, setStartMonth] = useState(initial.startMonth ?? '');
+  const [endMonth, setEndMonth] = useState(initial.endMonth ?? '');
   const [essential, setEssential] = useState(initial.essential);
 
   const submit = () => {
     const value = parseFloat(amount.replace(',', '.'));
     if (!name.trim() || !Number.isFinite(value) || value < 0) return;
     const day = paymentDay ? Math.min(31, Math.max(1, parseInt(paymentDay, 10))) : undefined;
+    const end = endMonth || undefined;
     onSave({
       name: name.trim(),
       amount: value,
       paymentDay: day,
-      active,
       essential,
+      active: !end, // ongoing while there is no last month
+      startMonth: startMonth || undefined,
+      endMonth: end,
     });
   };
 
@@ -167,13 +201,19 @@ function FixedCostForm({
             placeholder="e.g. 15"
           />
         </Field>
+        <Field label="First month" hint="When it started. Empty = also counts earlier months.">
+          <input
+            type="month"
+            value={startMonth}
+            onChange={(e) => setStartMonth(e.target.value)}
+          />
+        </Field>
+        <Field label="Last month" hint="When it stops. Empty = ongoing. Past months stay counted.">
+          <input type="month" value={endMonth} onChange={(e) => setEndMonth(e.target.value)} />
+        </Field>
       </div>
 
       <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 11 }}>
-        <label className="checkbox-row">
-          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
-          Active (counts toward fixed costs)
-        </label>
         <label className="checkbox-row">
           <input
             type="checkbox"

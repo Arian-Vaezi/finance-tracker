@@ -7,10 +7,13 @@
 // Quick glossary of the core formulas (for the selected month):
 //
 //   monthly_income        = sum of income entries dated in the month
-//   fixed_costs           = sum of ACTIVE fixed monthly costs
-//   variable_spending     = sum of expense entries dated in the month
-//                           (fixed costs live in their own ledger, so they are
-//                            never double-counted here)
+//   fixed_costs           = sum of fixed costs that APPLY to the month
+//                           (each cost has an optional start/end month, so a
+//                            cost you cancel today no longer rewrites history)
+//   variable_spending     = sum of expense entries dated in the month, EXCLUDING
+//                           transfers (moving money between your own accounts is
+//                           not spending). Fixed costs live in their own ledger,
+//                           so they are never double-counted here.
 //   remaining_after_fixed = monthly_income - fixed_costs
 //   remaining_money       = monthly_income - fixed_costs - variable_spending
 //   savings_goal          = optional amount set aside each month before spending
@@ -35,6 +38,10 @@ import { addMonths, daysInMonth, eur, isInMonth, ordinal, pct, currentMonth } fr
 export function budgetMonthOf(i: IncomeEntry): string {
   return i.budgetMonth ?? i.date.slice(0, 7);
 }
+
+// A transfer just moves money between the user's own accounts, so it is never
+// real spending: it must not reduce safe-to-spend nor show up as an expense.
+const TRANSFER_CATEGORY = 'transfer';
 
 export interface MonthSummary {
   month: string;
@@ -85,11 +92,32 @@ export function totalBank(data: AppData): number {
   return data.accounts.reduce((s, a) => s + a.balance, 0);
 }
 
-/** Sum of active fixed costs. */
-export function totalFixedCosts(data: AppData): number {
+/**
+ * Whether a fixed cost applies to a given budget month ("YYYY-MM").
+ *
+ * A cost counts toward a month only inside its effective window:
+ *   - before `startMonth` (when set): not yet active.
+ *   - after `endMonth` (when set): already cancelled.
+ * When there is no `endMonth`, the cost is ongoing iff it is `active`. This is
+ * the crucial fix: ending a cost stamps `endMonth`, so past months keep it and
+ * only the future drops it — disabling no longer rewrites history.
+ */
+export function isFixedCostInMonth(f: FixedCost, month: string): boolean {
+  if (f.startMonth && month < f.startMonth) return false;
+  if (f.endMonth) return month <= f.endMonth;
+  return f.active;
+}
+
+/** Sum of fixed costs that apply to a specific month. */
+export function fixedCostsForMonth(data: AppData, month: string): number {
   return data.fixedCosts
-    .filter((f) => f.active)
+    .filter((f) => isFixedCostInMonth(f, month))
     .reduce((s, f) => s + f.amount, 0);
+}
+
+/** Sum of the currently ongoing fixed costs (this month's live total). */
+export function totalFixedCosts(data: AppData): number {
+  return fixedCostsForMonth(data, currentMonth());
 }
 
 /**
@@ -131,10 +159,13 @@ export function computeMonthSummary(
     .filter((i) => budgetMonthOf(i) === month)
     .reduce((s, i) => s + i.amount, 0);
 
-  const fixedCosts = totalFixedCosts(data);
+  // Fixed costs that actually applied to THIS month (respecting each cost's
+  // start/end window), so past months are never retroactively rewritten when a
+  // cost is later cancelled or added.
+  const fixedCosts = fixedCostsForMonth(data, month);
 
   const variableSpending = data.expenses
-    .filter((e) => isInMonth(e.date, month))
+    .filter((e) => isInMonth(e.date, month) && e.category !== TRANSFER_CATEGORY)
     .reduce((s, e) => s + e.amount, 0);
 
   const remainingAfterFixed = monthlyIncome - fixedCosts;
@@ -325,7 +356,7 @@ export function computeWarnings(
   // 6. Upcoming fixed-cost debit reminders (e.g. health insurance on the 15th).
   if (s.isCurrentMonth) {
     for (const f of data.fixedCosts) {
-      if (!f.active || !f.paymentDay) continue;
+      if (!f.paymentDay || !isFixedCostInMonth(f, s.month)) continue;
       const daysUntil = f.paymentDay - now.getDate();
       if (daysUntil >= 0 && daysUntil <= 5) {
         out.push({
@@ -434,7 +465,7 @@ export interface CategoryTotal {
 export function spendingByCategory(data: AppData, month: string): CategoryTotal[] {
   const map = new Map<string, number>();
   for (const e of data.expenses) {
-    if (!isInMonth(e.date, month)) continue;
+    if (!isInMonth(e.date, month) || e.category === TRANSFER_CATEGORY) continue;
     map.set(e.category, (map.get(e.category) ?? 0) + e.amount);
   }
   return [...map.entries()]
@@ -650,15 +681,15 @@ export interface PanicInfo {
   borrowedMessage: string;
 }
 
-function findFixed(data: AppData, keyword: string): FixedCost | undefined {
+function findFixed(data: AppData, keyword: string, month: string): FixedCost | undefined {
   return data.fixedCosts.find(
-    (f) => f.active && f.name.toLowerCase().includes(keyword),
+    (f) => isFixedCostInMonth(f, month) && f.name.toLowerCase().includes(keyword),
   );
 }
 
 export function computePanic(data: AppData, s: MonthSummary): PanicInfo {
-  const rent = findFixed(data, 'rent');
-  const health = findFixed(data, 'health') ?? findFixed(data, 'insurance');
+  const rent = findFixed(data, 'rent', s.month);
+  const health = findFixed(data, 'health', s.month) ?? findFixed(data, 'insurance', s.month);
 
   const afterEssentials =
     s.monthlyIncome - (rent?.amount ?? 0) - (health?.amount ?? 0);
@@ -672,7 +703,7 @@ export function computePanic(data: AppData, s: MonthSummary): PanicInfo {
     s.daysLeft > 0 ? dailyFoodBudget * Math.min(7, s.daysLeft) : Math.max(0, s.remainingMoney);
 
   const cutFirst = data.fixedCosts
-    .filter((f) => f.active && !f.essential)
+    .filter((f) => isFixedCostInMonth(f, s.month) && !f.essential)
     .sort((a, b) => b.amount - a.amount);
   const cutFirstTotal = cutFirst.reduce((sum, f) => sum + f.amount, 0);
 

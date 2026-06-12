@@ -38,7 +38,10 @@ React + TypeScript, financial logic, and deployment.
 - **Variable income tracking** — enter each payment manually; income is grouped by a
   **budget month** so money earned one month but spent the next counts correctly.
 - **Expense tracking** — categorised, per-account, fully editable.
-- **Fixed costs** — recurring bills you can add/edit/disable/delete, with payment dates.
+- **Fixed costs** — recurring bills you can add/edit/end/delete, with payment dates.
+  Each cost has an optional start/end month, so *ending* a cancelled cost (or
+  *adding* a new one) only changes the months it actually applies to — past months
+  are never silently rewritten.
 - **Bank accounts** — manual balances and account types.
 - **Debt tracking** — separate ledger with repayment progress; clearly *not* free money.
 - **Safe-to-spend engine** — daily and weekly limits from what's left in the month.
@@ -211,8 +214,10 @@ For the selected month (full details in `src/lib/calculations.ts`):
 
 ```
 monthly_income        = sum of income whose budget month is the month
-fixed_costs           = sum of active fixed monthly costs
-variable_spending     = sum of expense entries in the month
+fixed_costs           = sum of fixed costs that apply to the month
+                        (each cost has an optional start/end month)
+variable_spending     = sum of expense entries in the month, excluding transfers
+                        (moving money between your own accounts isn't spending)
 remaining_money       = monthly_income − fixed_costs − variable_spending
 spendable_remaining   = remaining_money − savings_goal (optional, default 0)
 safe_to_spend_per_day = spendable_remaining / days_left (incl. today)
