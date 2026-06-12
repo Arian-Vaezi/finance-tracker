@@ -47,7 +47,7 @@ real financial logic, and deployment.
   Each cost has an optional start/end month, so *ending* a cancelled cost (or
   *adding* a new one) only changes the months it actually applies to — past months
   are never silently rewritten.
-- **Bank accounts** — balances and account types, with linked expenses updating balances automatically.
+- **Bank accounts** — balances and account types, with linked income, expenses, and transfers updating balances automatically.
 - **Debt tracking** — separate ledger with repayment progress; clearly *not* free money.
 - **Safe-to-spend engine** — daily and weekly limits from what's left in the month.
 - **Monthly savings goal** — optionally set an amount aside each month *before* anything

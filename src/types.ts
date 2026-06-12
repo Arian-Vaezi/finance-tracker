@@ -20,12 +20,14 @@ export interface IncomeEntry {
   date: string; // ISO date: "YYYY-MM-DD" - when the money actually arrived
   source: string; // e.g. part-time job, gig, family, refund, other
   amount: number;
+  accountId?: string; // references BankAccount.id (""/undefined = not applied to a balance)
   note?: string;
   // Optional "budget month" ("YYYY-MM"): the month this money is meant to be
   // spent in. Defaults to the month of `date` when omitted. Lets income you earn
   // one month but spend the next (e.g. gig early payouts) count toward the
   // month you actually spend it.
   budgetMonth?: string;
+  balanceImpactApplied?: boolean;
 }
 
 // Fixed list of expense categories requested in the brief.
@@ -55,6 +57,7 @@ export interface ExpenseEntry {
   category: string;
   amount: number;
   accountId: string; // references BankAccount.id ("" = unassigned)
+  transferToAccountId?: string; // for category === "transfer"
   note?: string;
   // True once this expense has been applied to the linked account balance.
   // Older saved expenses do not have this flag, so edits can avoid refunding

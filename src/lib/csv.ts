@@ -51,7 +51,7 @@ export function transactionsToCSV(data: AppData): string {
     budgetMonthOf(i),
     i.source,
     i.amount,
-    '',
+    accountName(i.accountId ?? ''),
     i.note,
   ]);
 

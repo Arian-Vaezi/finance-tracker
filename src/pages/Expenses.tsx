@@ -30,7 +30,7 @@ export default function Expenses() {
   const [editing, setEditing] = useState<ExpenseEntry | null>(null);
   const [adding, setAdding] = useState(false);
 
-  const accountName = (id: string) =>
+  const accountName = (id?: string) =>
     data.accounts.find((a) => a.id === id)?.name ?? '—';
 
   const entries = useMemo(
@@ -67,7 +67,12 @@ export default function Expenses() {
             {entries.map((e) => (
               <div className="item" key={e.id}>
                 <div className="item-main">
-                  <div className="item-title cap">{e.category}</div>
+                  <div className="item-title cap">
+                    {e.category}
+                    {e.category === 'transfer' && e.transferToAccountId
+                      ? ` to ${accountName(e.transferToAccountId)}`
+                      : ''}
+                  </div>
                   <div className="item-sub">
                     {formatDate(e.date)} · {accountName(e.accountId)}
                     {e.note ? ` · ${e.note}` : ''}
@@ -124,12 +129,28 @@ function ExpenseForm({
   const [category, setCategory] = useState(initial.category);
   const [amount, setAmount] = useState(String(initial.amount || ''));
   const [accountId, setAccountId] = useState(initial.accountId);
+  const [transferToAccountId, setTransferToAccountId] = useState(
+    initial.transferToAccountId ?? '',
+  );
   const [note, setNote] = useState(initial.note ?? '');
 
   const submit = () => {
     const value = parseFloat(amount.replace(',', '.'));
     if (!date || !Number.isFinite(value) || value <= 0) return;
-    onSave({ date, category, amount: value, accountId, note: note.trim() });
+    if (
+      category === 'transfer' &&
+      (!accountId || !transferToAccountId || accountId === transferToAccountId)
+    ) {
+      return;
+    }
+    onSave({
+      date,
+      category,
+      amount: value,
+      accountId,
+      transferToAccountId: category === 'transfer' ? transferToAccountId : undefined,
+      note: note.trim(),
+    });
   };
 
   return (
@@ -158,7 +179,7 @@ function ExpenseForm({
             placeholder="0.00"
           />
         </Field>
-        <Field label="Payment account">
+        <Field label={category === 'transfer' ? 'From account' : 'Payment account'}>
           <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
             <option value="">— none —</option>
             {accounts.map((a) => (
@@ -168,6 +189,21 @@ function ExpenseForm({
             ))}
           </select>
         </Field>
+        {category === 'transfer' && (
+          <Field label="Transfer to account">
+            <select
+              value={transferToAccountId}
+              onChange={(e) => setTransferToAccountId(e.target.value)}
+            >
+              <option value="">— choose account —</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <Field label="Note (optional)">
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note" />
         </Field>

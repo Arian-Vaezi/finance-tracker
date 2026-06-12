@@ -149,13 +149,8 @@ function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-function affectsAccountBalance(expense: Pick<ExpenseEntry, 'accountId' | 'category' | 'amount'>) {
-  return (
-    expense.accountId !== '' &&
-    expense.category !== 'transfer' &&
-    Number.isFinite(expense.amount) &&
-    expense.amount > 0
-  );
+function isPositiveMoney(value: number): boolean {
+  return Number.isFinite(value) && value > 0;
 }
 
 function applyAccountDelta(accounts: BankAccount[], accountId: string, delta: number): BankAccount[] {
@@ -167,13 +162,46 @@ function applyAccountDelta(accounts: BankAccount[], accountId: string, delta: nu
   );
 }
 
-function applyExpenseBalanceChange(
+function applyAccountDeltas(
   accounts: BankAccount[],
-  expense: Pick<ExpenseEntry, 'accountId' | 'category' | 'amount'>,
-  direction: 1 | -1,
+  deltas: { accountId: string; amount: number }[],
 ): BankAccount[] {
-  if (!affectsAccountBalance(expense)) return accounts;
-  return applyAccountDelta(accounts, expense.accountId, direction * expense.amount);
+  return deltas.reduce(
+    (nextAccounts, delta) => applyAccountDelta(nextAccounts, delta.accountId, delta.amount),
+    accounts,
+  );
+}
+
+function incomeBalanceDeltas(
+  income: Pick<IncomeEntry, 'accountId' | 'amount'>,
+  direction: 1 | -1,
+): { accountId: string; amount: number }[] {
+  if (!income.accountId || !isPositiveMoney(income.amount)) return [];
+  return [{ accountId: income.accountId, amount: direction * income.amount }];
+}
+
+function expenseBalanceDeltas(
+  expense: Pick<ExpenseEntry, 'accountId' | 'transferToAccountId' | 'category' | 'amount'>,
+  direction: 1 | -1,
+): { accountId: string; amount: number }[] {
+  if (!isPositiveMoney(expense.amount)) return [];
+
+  if (expense.category === 'transfer') {
+    if (
+      !expense.accountId ||
+      !expense.transferToAccountId ||
+      expense.accountId === expense.transferToAccountId
+    ) {
+      return [];
+    }
+    return [
+      { accountId: expense.accountId, amount: direction * -expense.amount },
+      { accountId: expense.transferToAccountId, amount: direction * expense.amount },
+    ];
+  }
+
+  if (!expense.accountId) return [];
+  return [{ accountId: expense.accountId, amount: direction * -expense.amount }];
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -311,19 +339,62 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       selectedMonth,
       setSelectedMonth,
 
-      addIncome: (e) => update((d) => ({ ...d, incomes: withItem(d.incomes, e) })),
-      updateIncome: (id, p) => update((d) => ({ ...d, incomes: patchItem(d.incomes, id, p) })),
-      deleteIncome: (id) => update((d) => ({ ...d, incomes: removeItem(d.incomes, id) })),
+      addIncome: (e) =>
+        update((d) => {
+          const balanceImpactApplied = incomeBalanceDeltas(e, 1).length > 0;
+          const entry = { ...e, balanceImpactApplied };
+          return {
+            ...d,
+            incomes: withItem(d.incomes, entry),
+            accounts: balanceImpactApplied
+              ? applyAccountDeltas(d.accounts, incomeBalanceDeltas(entry, 1))
+              : d.accounts,
+          };
+        }),
+      updateIncome: (id, p) =>
+        update((d) => {
+          const existing = d.incomes.find((income) => income.id === id);
+          if (!existing) return d;
+          const next = { ...existing, ...p };
+          const nextBalanceImpactApplied = incomeBalanceDeltas(next, 1).length > 0;
+          let accounts = d.accounts;
+          if (existing.balanceImpactApplied) {
+            accounts = applyAccountDeltas(accounts, incomeBalanceDeltas(existing, -1));
+          }
+          if (nextBalanceImpactApplied) {
+            accounts = applyAccountDeltas(accounts, incomeBalanceDeltas(next, 1));
+          }
+          return {
+            ...d,
+            incomes: patchItem(d.incomes, id, {
+              ...p,
+              balanceImpactApplied: nextBalanceImpactApplied,
+            }),
+            accounts,
+          };
+        }),
+      deleteIncome: (id) =>
+        update((d) => {
+          const existing = d.incomes.find((income) => income.id === id);
+          if (!existing) return d;
+          return {
+            ...d,
+            incomes: removeItem(d.incomes, id),
+            accounts: existing.balanceImpactApplied
+              ? applyAccountDeltas(d.accounts, incomeBalanceDeltas(existing, -1))
+              : d.accounts,
+          };
+        }),
 
       addExpense: (e) =>
         update((d) => {
-          const balanceImpactApplied = affectsAccountBalance(e);
+          const balanceImpactApplied = expenseBalanceDeltas(e, 1).length > 0;
           const entry = { ...e, balanceImpactApplied };
           return {
             ...d,
             expenses: withItem(d.expenses, entry),
             accounts: balanceImpactApplied
-              ? applyExpenseBalanceChange(d.accounts, entry, -1)
+              ? applyAccountDeltas(d.accounts, expenseBalanceDeltas(entry, 1))
               : d.accounts,
           };
         }),
@@ -332,13 +403,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const existing = d.expenses.find((expense) => expense.id === id);
           if (!existing) return d;
           const next = { ...existing, ...p };
-          const nextBalanceImpactApplied = affectsAccountBalance(next);
+          const nextBalanceImpactApplied = expenseBalanceDeltas(next, 1).length > 0;
           let accounts = d.accounts;
           if (existing.balanceImpactApplied) {
-            accounts = applyExpenseBalanceChange(accounts, existing, 1);
+            accounts = applyAccountDeltas(accounts, expenseBalanceDeltas(existing, -1));
           }
           if (nextBalanceImpactApplied) {
-            accounts = applyExpenseBalanceChange(accounts, next, -1);
+            accounts = applyAccountDeltas(accounts, expenseBalanceDeltas(next, 1));
           }
           return {
             ...d,
@@ -357,7 +428,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             ...d,
             expenses: removeItem(d.expenses, id),
             accounts: existing.balanceImpactApplied
-              ? applyExpenseBalanceChange(d.accounts, existing, 1)
+              ? applyAccountDeltas(d.accounts, expenseBalanceDeltas(existing, -1))
               : d.accounts,
           };
         }),

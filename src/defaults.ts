@@ -36,17 +36,73 @@ export function makeDemoData(now: Date = new Date()): AppData {
 
     // Monthly income -> €1,350 total (variable, entered per month).
     incomes: [
-      { id: uid(), date: day(1), source: 'Part-time job', amount: 900, note: 'Monthly wage' },
-      { id: uid(), date: day(3), source: 'Tutoring', amount: 450, note: 'Side income' },
+      {
+        id: uid(),
+        date: day(1),
+        source: 'Part-time job',
+        amount: 900,
+        accountId: accA,
+        note: 'Monthly wage',
+        balanceImpactApplied: true,
+      },
+      {
+        id: uid(),
+        date: day(3),
+        source: 'Tutoring',
+        amount: 450,
+        accountId: accA,
+        note: 'Side income',
+        balanceImpactApplied: true,
+      },
     ],
 
     // Example day-to-day expenses (kept modest so the demo opens healthy).
     expenses: [
-      { id: uid(), date: day(2), category: 'groceries', amount: 18.5, accountId: accA, note: 'Supermarket' },
-      { id: uid(), date: day(3), category: 'eating out', amount: 11, accountId: accA, note: 'Lunch with friends' },
-      { id: uid(), date: day(4), category: 'pharmacy/health', amount: 8.5, accountId: accA, note: 'Pharmacy' },
-      { id: uid(), date: day(4), category: 'university', amount: 12, accountId: accA, note: 'Printing & supplies' },
-      { id: uid(), date: day(5), category: 'gym', amount: 9, accountId: accA, note: 'Day pass' },
+      {
+        id: uid(),
+        date: day(2),
+        category: 'groceries',
+        amount: 18.5,
+        accountId: accA,
+        note: 'Supermarket',
+        balanceImpactApplied: true,
+      },
+      {
+        id: uid(),
+        date: day(3),
+        category: 'eating out',
+        amount: 11,
+        accountId: accA,
+        note: 'Lunch with friends',
+        balanceImpactApplied: true,
+      },
+      {
+        id: uid(),
+        date: day(4),
+        category: 'pharmacy/health',
+        amount: 8.5,
+        accountId: accA,
+        note: 'Pharmacy',
+        balanceImpactApplied: true,
+      },
+      {
+        id: uid(),
+        date: day(4),
+        category: 'university',
+        amount: 12,
+        accountId: accA,
+        note: 'Printing & supplies',
+        balanceImpactApplied: true,
+      },
+      {
+        id: uid(),
+        date: day(5),
+        category: 'gym',
+        amount: 9,
+        accountId: accA,
+        note: 'Day pass',
+        balanceImpactApplied: true,
+      },
     ],
 
     // Fixed monthly costs -> €917 total.

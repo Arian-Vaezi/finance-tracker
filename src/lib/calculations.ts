@@ -39,9 +39,15 @@ export function budgetMonthOf(i: IncomeEntry): string {
   return i.budgetMonth ?? i.date.slice(0, 7);
 }
 
-// A transfer just moves money between the user's own accounts, so it is never
-// real spending: it must not reduce safe-to-spend nor show up as an expense.
+// These expense rows may still move bank balances, but they are not variable
+// spending for safe-to-spend: transfers move own money, while rent and health
+// insurance belong in the fixed-costs ledger.
 const TRANSFER_CATEGORY = 'transfer';
+const NON_VARIABLE_SPENDING_CATEGORIES = new Set([
+  TRANSFER_CATEGORY,
+  'rent',
+  'health insurance',
+]);
 
 export interface MonthSummary {
   month: string;
@@ -165,7 +171,7 @@ export function computeMonthSummary(
   const fixedCosts = fixedCostsForMonth(data, month);
 
   const variableSpending = data.expenses
-    .filter((e) => isInMonth(e.date, month) && e.category !== TRANSFER_CATEGORY)
+    .filter((e) => isInMonth(e.date, month) && !NON_VARIABLE_SPENDING_CATEGORIES.has(e.category))
     .reduce((s, e) => s + e.amount, 0);
 
   const remainingAfterFixed = monthlyIncome - fixedCosts;
@@ -465,7 +471,7 @@ export interface CategoryTotal {
 export function spendingByCategory(data: AppData, month: string): CategoryTotal[] {
   const map = new Map<string, number>();
   for (const e of data.expenses) {
-    if (!isInMonth(e.date, month) || e.category === TRANSFER_CATEGORY) continue;
+    if (!isInMonth(e.date, month) || NON_VARIABLE_SPENDING_CATEGORIES.has(e.category)) continue;
     map.set(e.category, (map.get(e.category) ?? 0) + e.amount);
   }
   return [...map.entries()]
@@ -526,7 +532,7 @@ export function suggestSavingsGoal(data: AppData, month: string): SavingsSuggest
 // Categories that are not variable spending behaviour, so never budgeted here:
 // transfers just move money between own accounts, and rent / health insurance
 // belong in the fixed-costs ledger.
-const NON_BUDGET_CATEGORIES = new Set(['transfer', 'rent', 'health insurance']);
+const NON_BUDGET_CATEGORIES = NON_VARIABLE_SPENDING_CATEGORIES;
 
 // Needs survive a tight month; every other category is a want and is cut first.
 const NEED_CATEGORIES = new Set([

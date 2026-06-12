@@ -17,10 +17,16 @@ import {
 
 type Draft = Omit<IncomeEntry, 'id'>;
 
-function emptyDraft(month: string): Draft {
+function emptyDraft(month: string, accountId: string): Draft {
   // Default the date into the currently-selected month.
   const day = todayISO().slice(8);
-  return { date: `${month}-${day > '28' ? '28' : day}`, source: 'part-time job', amount: 0, note: '' };
+  return {
+    date: `${month}-${day > '28' ? '28' : day}`,
+    source: 'part-time job',
+    amount: 0,
+    accountId,
+    note: '',
+  };
 }
 
 export default function Income() {
@@ -38,12 +44,15 @@ export default function Income() {
   );
 
   const total = entries.reduce((s, i) => s + i.amount, 0);
+  const defaultAccount = data.accounts[0]?.id ?? '';
+  const accountName = (id?: string) =>
+    id ? data.accounts.find((a) => a.id === id)?.name ?? 'Unknown account' : 'no account';
 
   return (
     <div className="stack">
       <SectionHeader
         title={`Income · ${monthLabel(selectedMonth)}`}
-        subtitle="Enter each payment you receive. They are summed automatically."
+        subtitle="Enter each payment you receive and choose the account it landed in."
         action={
           <div className="btn-row">
             <Button variant="secondary" onClick={() => setGigShift(true)}>
@@ -80,6 +89,8 @@ export default function Income() {
                   </div>
                   <div className="item-sub">
                     {formatDate(i.date)}
+                    {' · '}
+                    {accountName(i.accountId)}
                     {i.note ? ` · ${i.note}` : ''}
                   </div>
                 </div>
@@ -98,8 +109,9 @@ export default function Income() {
 
       {(adding || editing) && (
         <IncomeForm
-          initial={editing ?? emptyDraft(selectedMonth)}
+          initial={editing ?? emptyDraft(selectedMonth, defaultAccount)}
           title={editing ? 'Edit income' : 'Add income'}
+          accounts={data.accounts}
           onClose={() => {
             setAdding(false);
             setEditing(null);
@@ -116,6 +128,8 @@ export default function Income() {
       {gigShift && (
         <GigShiftForm
           month={selectedMonth}
+          accounts={data.accounts}
+          defaultAccount={defaultAccount}
           onClose={() => setGigShift(false)}
           onSave={(entries) => {
             entries.forEach((e) => addIncome(e));
@@ -130,17 +144,20 @@ export default function Income() {
 function IncomeForm({
   initial,
   title,
+  accounts,
   onClose,
   onSave,
 }: {
   initial: Draft;
   title: string;
+  accounts: { id: string; name: string }[];
   onClose: () => void;
   onSave: (draft: Draft) => void;
 }) {
   const [date, setDate] = useState(initial.date);
   const [source, setSource] = useState(initial.source);
   const [amount, setAmount] = useState(String(initial.amount || ''));
+  const [accountId, setAccountId] = useState(initial.accountId ?? '');
   const [note, setNote] = useState(initial.note ?? '');
   // "For next month" is on when the saved budget month is the month after the date.
   const [forNextMonth, setForNextMonth] = useState(
@@ -154,6 +171,7 @@ function IncomeForm({
       date,
       source: source.trim(),
       amount: value,
+      accountId,
       note: note.trim(),
       budgetMonth: forNextMonth ? addMonths(date.slice(0, 7), 1) : undefined,
     });
@@ -189,6 +207,16 @@ function IncomeForm({
             placeholder="0.00"
           />
         </Field>
+        <Field label="Deposit account">
+          <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+            <option value="">— none —</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </Field>
         <Field label="Note (optional)">
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note" />
         </Field>
@@ -220,10 +248,14 @@ function IncomeForm({
 
 function GigShiftForm({
   month,
+  accounts,
+  defaultAccount,
   onClose,
   onSave,
 }: {
   month: string;
+  accounts: { id: string; name: string }[];
+  defaultAccount: string;
   onClose: () => void;
   onSave: (entries: Omit<IncomeEntry, 'id'>[]) => void;
 }) {
@@ -234,6 +266,7 @@ function GigShiftForm({
   });
   const [total, setTotal] = useState('');
   const [earlyPct, setEarlyPct] = useState('50');
+  const [accountId, setAccountId] = useState(defaultAccount);
 
   const totalNum = parseFloat(total.replace(',', '.'));
   const pctNum = Math.min(100, Math.max(0, parseFloat(earlyPct.replace(',', '.')) || 0));
@@ -242,7 +275,7 @@ function GigShiftForm({
 
   const submit = () => {
     if (!preview) return;
-    onSave([preview.early]); // only the reliable early payout is saved
+    onSave([{ ...preview.early, accountId }]); // only the reliable early payout is saved
   };
 
   return (
@@ -276,6 +309,16 @@ function GigShiftForm({
             value={earlyPct}
             onChange={(e) => setEarlyPct(e.target.value)}
           />
+        </Field>
+        <Field label="Deposit account">
+          <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+            <option value="">— none —</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
         </Field>
       </div>
 
