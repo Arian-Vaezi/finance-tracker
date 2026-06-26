@@ -27,8 +27,8 @@
 //   real_net     = total_bank - total_debt   <- your actual free money
 // ===========================================================================
 
-import { AppData, FixedCost, IncomeEntry } from '../types';
-import { addMonths, daysInMonth, eur, isInMonth, ordinal, pct, currentMonth } from './format';
+import { AppData, ExpenseEntry, FixedCost, IncomeEntry } from '../types';
+import { addMonths, daysInMonth, eur, ordinal, pct, currentMonth } from './format';
 
 /**
  * The month an income counts toward in the budget: its explicit `budgetMonth`,
@@ -37,6 +37,16 @@ import { addMonths, daysInMonth, eur, isInMonth, ordinal, pct, currentMonth } fr
  */
 export function budgetMonthOf(i: IncomeEntry): string {
   return i.budgetMonth ?? i.date.slice(0, 7);
+}
+
+/**
+ * The month an expense counts toward in the budget: its explicit `budgetMonth`,
+ * or the month of its date when none is set. The mirror of `budgetMonthOf` for
+ * expenses, so a purchase paid this month can be deferred onto next month's
+ * budget without faking the transaction date.
+ */
+export function budgetMonthOfExpense(e: ExpenseEntry): string {
+  return e.budgetMonth ?? e.date.slice(0, 7);
 }
 
 // These expense rows may still move bank balances, but they are not variable
@@ -171,7 +181,11 @@ export function computeMonthSummary(
   const fixedCosts = fixedCostsForMonth(data, month);
 
   const variableSpending = data.expenses
-    .filter((e) => isInMonth(e.date, month) && !NON_VARIABLE_SPENDING_CATEGORIES.has(e.category))
+    .filter(
+      (e) =>
+        budgetMonthOfExpense(e) === month &&
+        !NON_VARIABLE_SPENDING_CATEGORIES.has(e.category),
+    )
     .reduce((s, e) => s + e.amount, 0);
 
   const remainingAfterFixed = monthlyIncome - fixedCosts;
@@ -471,7 +485,8 @@ export interface CategoryTotal {
 export function spendingByCategory(data: AppData, month: string): CategoryTotal[] {
   const map = new Map<string, number>();
   for (const e of data.expenses) {
-    if (!isInMonth(e.date, month) || NON_VARIABLE_SPENDING_CATEGORIES.has(e.category)) continue;
+    if (budgetMonthOfExpense(e) !== month || NON_VARIABLE_SPENDING_CATEGORIES.has(e.category))
+      continue;
     map.set(e.category, (map.get(e.category) ?? 0) + e.amount);
   }
   return [...map.entries()]
@@ -585,10 +600,26 @@ export interface CategoryBudgetPlan {
 function budgetableSpend(data: AppData, month: string): Map<string, number> {
   const map = new Map<string, number>();
   for (const e of data.expenses) {
-    if (!isInMonth(e.date, month) || NON_BUDGET_CATEGORIES.has(e.category)) continue;
+    if (budgetMonthOfExpense(e) !== month || NON_BUDGET_CATEGORIES.has(e.category)) continue;
     map.set(e.category, (map.get(e.category) ?? 0) + e.amount);
   }
   return map;
+}
+
+/**
+ * Variable spending deferred *into* a month from an earlier one — expenses paid
+ * before `month` but budgeted to it. This is the slice of the month's budget
+ * already committed before the month begins, so the user can see the snowball.
+ */
+export function deferredIntoMonth(data: AppData, month: string): number {
+  return data.expenses
+    .filter(
+      (e) =>
+        budgetMonthOfExpense(e) === month &&
+        e.date.slice(0, 7) < month &&
+        !NON_VARIABLE_SPENDING_CATEGORIES.has(e.category),
+    )
+    .reduce((s, e) => s + e.amount, 0);
 }
 
 export function computeCategoryBudgets(data: AppData, s: MonthSummary): CategoryBudgetPlan {

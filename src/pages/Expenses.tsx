@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store';
 import { EXPENSE_CATEGORIES, ExpenseEntry } from '../types';
-import { eur, formatDate, isInMonth, monthLabel, todayISO } from '../lib/format';
+import { addMonths, eur, formatDate, monthLabel, todayISO } from '../lib/format';
+import { budgetMonthOfExpense, deferredIntoMonth } from '../lib/calculations';
 import {
+  Badge,
   Button,
   Card,
   ConfirmButton,
@@ -36,12 +38,16 @@ export default function Expenses() {
   const entries = useMemo(
     () =>
       data.expenses
-        .filter((e) => isInMonth(e.date, selectedMonth))
+        .filter((e) => budgetMonthOfExpense(e) === selectedMonth)
         .sort((a, b) => b.date.localeCompare(a.date)),
     [data.expenses, selectedMonth],
   );
 
   const total = entries.reduce((s, e) => s + e.amount, 0);
+  const committed = useMemo(
+    () => deferredIntoMonth(data, selectedMonth),
+    [data, selectedMonth],
+  );
   const defaultAccount = data.accounts[0]?.id ?? '';
 
   return (
@@ -60,6 +66,13 @@ export default function Expenses() {
           </span>
         </div>
 
+        {committed > 0 && (
+          <div className="tiny muted" style={{ marginBottom: 14 }}>
+            {eur(committed)} of this month's budget was already committed by expenses deferred
+            here from earlier months.
+          </div>
+        )}
+
         {entries.length === 0 ? (
           <EmptyState>No expenses for {monthLabel(selectedMonth)} yet.</EmptyState>
         ) : (
@@ -72,6 +85,9 @@ export default function Expenses() {
                     {e.category === 'transfer' && e.transferToAccountId
                       ? ` to ${accountName(e.transferToAccountId)}`
                       : ''}
+                    {budgetMonthOfExpense(e) !== e.date.slice(0, 7) && (
+                      <Badge tone="info">deferred from {monthLabel(e.date.slice(0, 7))}</Badge>
+                    )}
                   </div>
                   <div className="item-sub">
                     {formatDate(e.date)} · {accountName(e.accountId)}
@@ -133,6 +149,12 @@ function ExpenseForm({
     initial.transferToAccountId ?? '',
   );
   const [note, setNote] = useState(initial.note ?? '');
+  // "Count against next month" is on when the saved budget month is the month
+  // after the date. Transfers are never budgeted, so the option is hidden there.
+  const [forNextMonth, setForNextMonth] = useState(
+    !!initial.budgetMonth && initial.budgetMonth === addMonths(initial.date.slice(0, 7), 1),
+  );
+  const canDefer = category !== 'transfer';
 
   const submit = () => {
     const value = parseFloat(amount.replace(',', '.'));
@@ -150,6 +172,8 @@ function ExpenseForm({
       accountId,
       transferToAccountId: category === 'transfer' ? transferToAccountId : undefined,
       note: note.trim(),
+      budgetMonth:
+        canDefer && forNextMonth ? addMonths(date.slice(0, 7), 1) : undefined,
     });
   };
 
@@ -208,6 +232,26 @@ function ExpenseForm({
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note" />
         </Field>
       </div>
+
+      {canDefer && (
+        <>
+          <label className="checkbox-row" style={{ marginTop: 14 }}>
+            <input
+              type="checkbox"
+              checked={forNextMonth}
+              onChange={(e) => setForNextMonth(e.target.checked)}
+            />
+            Count against next month's budget (keeps this month's safe-to-spend intact)
+          </label>
+          {forNextMonth && (
+            <div className="tiny muted" style={{ marginTop: 6 }}>
+              Paid {date ? formatDate(date) : 'this month'}, but counts toward{' '}
+              {monthLabel(addMonths(date.slice(0, 7), 1))}.
+            </div>
+          )}
+        </>
+      )}
+
       <div className="form-actions">
         <Button variant="secondary" onClick={onClose}>
           Cancel

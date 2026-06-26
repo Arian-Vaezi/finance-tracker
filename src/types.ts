@@ -59,6 +59,13 @@ export interface ExpenseEntry {
   accountId: string; // references BankAccount.id ("" = unassigned)
   transferToAccountId?: string; // for category === "transfer"
   note?: string;
+  // Optional "budget month" ("YYYY-MM"): the month this expense should count
+  // against in the budget. Defaults to the month of `date` when omitted. Lets an
+  // expense paid this month be funded from a different month's budget (e.g.
+  // deferring a purchase to next month to keep this month's safe-to-spend
+  // intact). The transaction date stays honest; only the budget bucket moves.
+  // Mirrors `IncomeEntry.budgetMonth`.
+  budgetMonth?: string;
   // True once this expense has been applied to the linked account balance.
   // Older saved expenses do not have this flag, so edits can avoid refunding
   // money that was never subtracted in the first place.

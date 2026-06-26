@@ -1,5 +1,5 @@
 import { AppData } from '../types';
-import { budgetMonthOf } from './calculations';
+import { budgetMonthOf, budgetMonthOfExpense } from './calculations';
 
 // Trigger a browser download for a generated file (CSV or JSON).
 export function downloadFile(filename: string, content: string, mime: string): void {
@@ -58,7 +58,7 @@ export function transactionsToCSV(data: AppData): string {
   const expenseRows = data.expenses.map((e) => [
     'expense',
     e.date,
-    e.date.slice(0, 7),
+    budgetMonthOfExpense(e),
     e.category,
     e.amount,
     accountName(e.accountId),
