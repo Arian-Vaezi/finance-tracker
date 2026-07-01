@@ -136,4 +136,4 @@ export const ACCOUNT_TYPES: { value: AccountType; label: string }[] = [
   { value: 'cash', label: 'Cash' },
 ];
 
-export const DATA_VERSION = 1;
+export const DATA_VERSION = 2;

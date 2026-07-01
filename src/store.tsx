@@ -53,12 +53,26 @@ export function isValidAppData(value: unknown): value is AppData {
   );
 }
 
+// Bring an older stored dataset up to the current shape.
+//   v1 -> v2: an early auto-debit build could flag a fixed cost "paid" for the
+//   current month WITHOUT ever debiting the account (it armed on the payment day
+//   before the debit ran, which then blocked the debit). No auto-debit had truly
+//   moved money before this, so clearing those flags is safe and lets the fixed
+//   reconcile post them properly.
+function migrateData(data: AppData): AppData {
+  if ((data.version ?? 0) >= DATA_VERSION) return data;
+  const fixedCosts = (data.fixedCosts ?? []).map((f) =>
+    f.postedMonths && f.postedMonths.length > 0 ? { ...f, postedMonths: [] } : f,
+  );
+  return { ...data, fixedCosts, version: DATA_VERSION };
+}
+
 function readData(key: string): AppData | null {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return isValidAppData(parsed) ? parsed : null;
+    return isValidAppData(parsed) ? migrateData(parsed) : null;
   } catch {
     return null;
   }
@@ -295,7 +309,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const remote = await pullData(userId as string);
         if (cancelled) return;
         if (remote) {
-          setData(remote);
+          setData(migrateData(remote));
         } else {
           await pushData(userId as string, dataRef.current);
         }
@@ -341,7 +355,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try {
         const remote = await pullData(userId as string);
         if (remote) {
-          setData(remote);
+          setData(migrateData(remote));
           setLastSyncedAt(Date.now());
         }
       } catch {
@@ -364,7 +378,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSyncStatus('syncing');
     pullData(userId as string)
       .then((remote) => {
-        if (remote) setData(remote);
+        if (remote) setData(migrateData(remote));
         setSyncStatus('synced');
         setLastSyncedAt(Date.now());
       })
