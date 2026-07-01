@@ -79,6 +79,15 @@ export interface FixedCost {
   paymentDay?: number; // day of the month the money is debited (1..31)
   active: boolean; // false = no longer ongoing (see endMonth); kept for reference
   essential: boolean; // non-essential costs are the ones Panic Mode suggests cutting
+  // Optional auto-debit: when an account is linked AND a paymentDay is set, the
+  // app debits `amount` from that account once its payment day arrives each
+  // month. Absent accountId = the cost is informational only (never moves a
+  // balance), which is the original behaviour.
+  accountId?: string; // references BankAccount.id
+  // Months ("YYYY-MM") already auto-debited to the account, so a payment is never
+  // posted twice. Only the current month is ever posted, so opening the app can
+  // never back-fill history.
+  postedMonths?: string[];
   // Optional effective window ("YYYY-MM"). A cost only counts toward months
   // inside [startMonth, endMonth]. Both are inclusive and either can be omitted:
   //   - startMonth absent => applies from the earliest data (open lower bound)

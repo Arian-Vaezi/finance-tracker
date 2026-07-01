@@ -137,6 +137,20 @@ export function totalFixedCosts(data: AppData): number {
 }
 
 /**
+ * Whether a fixed cost's auto-debit for the CURRENT month is due to post now: it
+ * has a linked account and a payment day, applies to this month, its payment day
+ * has arrived, and it has not already been posted. Only the current month is ever
+ * considered, so opening the app can never back-fill months of history.
+ */
+export function isFixedCostPostable(f: FixedCost, now: Date = new Date()): boolean {
+  if (!f.accountId || !f.paymentDay) return false;
+  const month = currentMonth(now);
+  if (!isFixedCostInMonth(f, month)) return false;
+  if ((f.postedMonths ?? []).includes(month)) return false;
+  return now.getDate() >= f.paymentDay;
+}
+
+/**
  * Compute every derived figure for a given month.
  * `now` is injected so the time-based math is deterministic and testable.
  */

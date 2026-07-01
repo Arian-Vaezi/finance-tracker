@@ -51,6 +51,18 @@ export default function FixedCosts() {
     [data.fixedCosts],
   );
   const monthlyTotal = useMemo(() => fixedCostsForMonth(data, thisMonth), [data, thisMonth]);
+  const accountName = (id?: string) => data.accounts.find((a) => a.id === id)?.name ?? '—';
+
+  // One line describing when/whether a cost hits a balance.
+  const scheduleLabel = (f: FixedCost): string => {
+    if (!f.paymentDay) return 'No fixed payment date';
+    const on = `on the ${ordinal(f.paymentDay)}`;
+    if (!f.accountId) return `Debited ${on}`;
+    const paid = (f.postedMonths ?? []).includes(thisMonth);
+    return paid
+      ? `Paid from ${accountName(f.accountId)} ${on}`
+      : `Auto-debits from ${accountName(f.accountId)} ${on}`;
+  };
 
   return (
     <div className="stack">
@@ -82,13 +94,10 @@ export default function FixedCosts() {
                     <div className="item-title">
                       {f.name}
                       {!f.essential && <Badge tone="info">optional</Badge>}
+                      {f.accountId && f.paymentDay && <Badge tone="info">auto</Badge>}
                       {win && <Badge tone={win.tone}>{win.text}</Badge>}
                     </div>
-                    <div className="item-sub">
-                      {f.paymentDay
-                        ? `Debited on the ${ordinal(f.paymentDay)}`
-                        : 'No fixed payment date'}
-                    </div>
+                    <div className="item-sub">{scheduleLabel(f)}</div>
                   </div>
                   <div className="item-amount">{eur(f.amount)}</div>
                   <div className="item-actions">
@@ -122,6 +131,7 @@ export default function FixedCosts() {
         <FixedCostForm
           initial={editing ?? makeEmptyDraft()}
           title={editing ? 'Edit fixed cost' : 'Add fixed cost'}
+          accounts={data.accounts}
           onClose={() => {
             setAdding(false);
             setEditing(null);
@@ -141,11 +151,13 @@ export default function FixedCosts() {
 function FixedCostForm({
   initial,
   title,
+  accounts,
   onClose,
   onSave,
 }: {
   initial: Draft;
   title: string;
+  accounts: { id: string; name: string }[];
   onClose: () => void;
   onSave: (draft: Draft) => void;
 }) {
@@ -157,6 +169,7 @@ function FixedCostForm({
   const [startMonth, setStartMonth] = useState(initial.startMonth ?? '');
   const [endMonth, setEndMonth] = useState(initial.endMonth ?? '');
   const [essential, setEssential] = useState(initial.essential);
+  const [accountId, setAccountId] = useState(initial.accountId ?? '');
 
   const submit = () => {
     const value = parseFloat(amount.replace(',', '.'));
@@ -171,6 +184,8 @@ function FixedCostForm({
       active: !end, // ongoing while there is no last month
       startMonth: startMonth || undefined,
       endMonth: end,
+      accountId: accountId || undefined,
+      postedMonths: initial.postedMonths, // preserve past auto-debits on edit
     });
   };
 
@@ -200,6 +215,25 @@ function FixedCostForm({
             onChange={(e) => setPaymentDay(e.target.value)}
             placeholder="e.g. 15"
           />
+        </Field>
+        <Field
+          label="Auto-debit account"
+          hint={
+            accountId && !paymentDay
+              ? 'Add a payment day to auto-debit this account.'
+              : accountId
+                ? 'Debited from this account when the payment day arrives.'
+                : 'Optional. Leave as none to keep it informational only.'
+          }
+        >
+          <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+            <option value="">— none —</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
         </Field>
         <Field label="First month" hint="When it started. Empty = also counts earlier months.">
           <input
