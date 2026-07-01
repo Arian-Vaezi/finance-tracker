@@ -391,6 +391,8 @@ export function computeWarnings(
   if (s.isCurrentMonth) {
     for (const f of data.fixedCosts) {
       if (!f.paymentDay || !isFixedCostInMonth(f, s.month)) continue;
+      // Already auto-debited this month -> the money has left, no reminder needed.
+      if ((f.postedMonths ?? []).includes(s.month)) continue;
       const daysUntil = f.paymentDay - now.getDate();
       if (daysUntil >= 0 && daysUntil <= 5) {
         out.push({

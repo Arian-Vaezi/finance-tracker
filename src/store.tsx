@@ -214,7 +214,9 @@ function armFixedCost(f: FixedCost, now: Date): FixedCost {
   const month = currentMonth(now);
   if (!isFixedCostInMonth(f, month)) return f;
   const posted = f.postedMonths ?? [];
-  if (posted.includes(month) || now.getDate() < f.paymentDay) return f;
+  // Only skip this month when the payment day has STRICTLY passed before opt-in.
+  // Linking on the payment day itself still debits today (reconcile handles it).
+  if (posted.includes(month) || now.getDate() <= f.paymentDay) return f;
   return { ...f, postedMonths: [...posted, month] };
 }
 
@@ -478,17 +480,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }),
 
       addFixedCost: (e) =>
-        update((d) => ({
-          ...d,
-          fixedCosts: [...d.fixedCosts, armFixedCost({ ...(e as FixedCost), id: uid() }, new Date())],
-        })),
-      updateFixedCost: (id, p) =>
-        update((d) => ({
-          ...d,
-          fixedCosts: d.fixedCosts.map((f) =>
-            f.id === id ? armFixedCost({ ...f, ...p }, new Date()) : f,
+        update((d) =>
+          reconcileFixedCosts(
+            {
+              ...d,
+              fixedCosts: [
+                ...d.fixedCosts,
+                armFixedCost({ ...(e as FixedCost), id: uid() }, new Date()),
+              ],
+            },
+            new Date(),
           ),
-        })),
+        ),
+      updateFixedCost: (id, p) =>
+        update((d) =>
+          reconcileFixedCosts(
+            {
+              ...d,
+              fixedCosts: d.fixedCosts.map((f) =>
+                f.id === id ? armFixedCost({ ...f, ...p }, new Date()) : f,
+              ),
+            },
+            new Date(),
+          ),
+        ),
       deleteFixedCost: (id) => update((d) => ({ ...d, fixedCosts: removeItem(d.fixedCosts, id) })),
 
       addAccount: (e) => update((d) => ({ ...d, accounts: withItem(d.accounts, e) })),
