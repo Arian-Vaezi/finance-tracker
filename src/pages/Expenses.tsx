@@ -1,46 +1,59 @@
 import { useMemo, useState } from 'react';
+import { Plus } from 'lucide-react';
 import { useStore } from '../store';
 import { EXPENSE_CATEGORIES, ExpenseEntry } from '../types';
-import { addMonths, eur, formatDate, monthLabel, todayISO } from '../lib/format';
+import { eur, formatDate, monthLabel, todayISO } from '../lib/format';
 import { budgetMonthOfExpense, deferredIntoMonth } from '../lib/calculations';
+import { Badge, ConfirmButton, EmptyState, SectionHeader } from '../components/ui';
 import {
-  Badge,
-  Button,
-  Card,
-  ConfirmButton,
-  EmptyState,
-  Field,
-  Modal,
-  SectionHeader,
-} from '../components/ui';
-
-type Draft = Omit<ExpenseEntry, 'id'>;
-
-function emptyDraft(month: string, accountId: string): Draft {
-  const day = todayISO().slice(8);
-  return {
-    date: `${month}-${day > '28' ? '28' : day}`,
-    category: 'groceries',
-    amount: 0,
-    accountId,
-    note: '',
-  };
-}
+  ExpenseDialog,
+  emptyExpenseDraft,
+  type ExpenseDraft,
+} from '../components/TransactionDialog';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 export default function Expenses() {
   const { data, selectedMonth, addExpense, updateExpense, deleteExpense } = useStore();
   const [editing, setEditing] = useState<ExpenseEntry | null>(null);
   const [adding, setAdding] = useState(false);
+  const [category, setCategory] = useState<string>('all');
 
   const accountName = (id?: string) =>
     data.accounts.find((a) => a.id === id)?.name ?? '—';
 
-  const entries = useMemo(
+  const monthEntries = useMemo(
     () =>
       data.expenses
         .filter((e) => budgetMonthOfExpense(e) === selectedMonth)
         .sort((a, b) => b.date.localeCompare(a.date)),
     [data.expenses, selectedMonth],
+  );
+
+  // Only offer categories that actually occur this month (plus the active one).
+  const presentCategories = useMemo(() => {
+    const present = new Set(monthEntries.map((e) => e.category));
+    return EXPENSE_CATEGORIES.filter((c) => present.has(c));
+  }, [monthEntries]);
+
+  const entries = useMemo(
+    () => (category === 'all' ? monthEntries : monthEntries.filter((e) => e.category === category)),
+    [monthEntries, category],
   );
 
   const total = entries.reduce((s, e) => s + e.amount, 0);
@@ -50,37 +63,80 @@ export default function Expenses() {
   );
   const defaultAccount = data.accounts[0]?.id ?? '';
 
+  const save = (draft: ExpenseDraft) => {
+    if (editing) updateExpense(editing.id, draft);
+    else addExpense(draft);
+    setAdding(false);
+    setEditing(null);
+  };
+
   return (
-    <div className="stack">
+    <div className="flex flex-col gap-4">
       <SectionHeader
         title={`Expenses · ${monthLabel(selectedMonth)}`}
         subtitle="Day-to-day spending. Fixed monthly bills live in the Fixed costs tab."
-        action={<Button onClick={() => setAdding(true)}>+ Add expense</Button>}
+        action={
+          <Button onClick={() => setAdding(true)}>
+            <Plus data-icon="inline-start" aria-hidden />
+            Add expense
+          </Button>
+        }
       />
 
-      <Card>
-        <div className="spread" style={{ marginBottom: 14 }}>
-          <span className="muted">{entries.length} entr{entries.length === 1 ? 'y' : 'ies'}</span>
-          <span className="item-amount amount-neg" style={{ fontSize: 18 }}>
-            {eur(total)}
-          </span>
+      <Card className="block gap-0 p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <Select value={category} onValueChange={setCategory}>
+            <SelectTrigger className="w-44 capitalize" aria-label="Filter by category">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All categories</SelectItem>
+              {presentCategories.map((c) => (
+                <SelectItem key={c} value={c} className="capitalize">
+                  {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="text-sm text-muted-foreground">
+            {entries.length} entr{entries.length === 1 ? 'y' : 'ies'} ·{' '}
+            <span className="font-semibold text-foreground">{eur(total)}</span>
+          </div>
         </div>
 
-        {committed > 0 && (
-          <div className="tiny muted" style={{ marginBottom: 14 }}>
-            {eur(committed)} of this month's budget was already committed by expenses deferred
-            here from earlier months.
-          </div>
+        {committed > 0 && category === 'all' && (
+          <p className="mb-4 text-xs text-muted-foreground">
+            {eur(committed)} of this month's budget was already committed by expenses
+            deferred here from earlier months.
+          </p>
         )}
 
         {entries.length === 0 ? (
-          <EmptyState>No expenses for {monthLabel(selectedMonth)} yet.</EmptyState>
+          <EmptyState>
+            {category === 'all'
+              ? `No expenses for ${monthLabel(selectedMonth)} yet.`
+              : `No ${category} expenses for ${monthLabel(selectedMonth)}.`}
+          </EmptyState>
         ) : (
-          <div className="item-list">
-            {entries.map((e) => (
-              <div className="item" key={e.id}>
-                <div className="item-main">
-                  <div className="item-title cap">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead className="max-sm:hidden">Account</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead>
+                  <span className="sr-only">Actions</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {entries.map((e) => (
+                <TableRow key={e.id}>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {formatDate(e.date)}
+                  </TableCell>
+                  <TableCell className="capitalize">
                     {e.category}
                     {e.category === 'transfer' && e.transferToAccountId
                       ? ` to ${accountName(e.transferToAccountId)}`
@@ -88,176 +144,41 @@ export default function Expenses() {
                     {budgetMonthOfExpense(e) !== e.date.slice(0, 7) && (
                       <Badge tone="info">deferred from {monthLabel(e.date.slice(0, 7))}</Badge>
                     )}
-                  </div>
-                  <div className="item-sub">
-                    {formatDate(e.date)} · {accountName(e.accountId)}
-                    {e.note ? ` · ${e.note}` : ''}
-                  </div>
-                </div>
-                <div className="item-amount amount-neg">−{eur(e.amount)}</div>
-                <div className="item-actions">
-                  <Button variant="ghost" onClick={() => setEditing(e)}>
-                    Edit
-                  </Button>
-                  <ConfirmButton onConfirm={() => deleteExpense(e.id)} />
-                </div>
-              </div>
-            ))}
-          </div>
+                    {e.note ? (
+                      <span className="block max-w-64 text-xs normal-case break-words text-muted-foreground">
+                        {e.note}
+                      </span>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground max-sm:hidden">
+                    {accountName(e.accountId)}
+                  </TableCell>
+                  <TableCell className="text-right font-medium">−{eur(e.amount)}</TableCell>
+                  <TableCell className="py-1.5 text-right whitespace-nowrap">
+                    <Button variant="ghost" size="sm" onClick={() => setEditing(e)}>
+                      Edit
+                    </Button>
+                    <ConfirmButton onConfirm={() => deleteExpense(e.id)} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
       </Card>
 
       {(adding || editing) && (
-        <ExpenseForm
-          initial={editing ?? emptyDraft(selectedMonth, defaultAccount)}
+        <ExpenseDialog
+          initial={editing ?? emptyExpenseDraft(selectedMonth, defaultAccount, todayISO())}
           title={editing ? 'Edit expense' : 'Add expense'}
           accounts={data.accounts}
           onClose={() => {
             setAdding(false);
             setEditing(null);
           }}
-          onSave={(draft) => {
-            if (editing) updateExpense(editing.id, draft);
-            else addExpense(draft);
-            setAdding(false);
-            setEditing(null);
-          }}
+          onSave={save}
         />
       )}
     </div>
-  );
-}
-
-function ExpenseForm({
-  initial,
-  title,
-  accounts,
-  onClose,
-  onSave,
-}: {
-  initial: Draft;
-  title: string;
-  accounts: { id: string; name: string }[];
-  onClose: () => void;
-  onSave: (draft: Draft) => void;
-}) {
-  const [date, setDate] = useState(initial.date);
-  const [category, setCategory] = useState(initial.category);
-  const [amount, setAmount] = useState(String(initial.amount || ''));
-  const [accountId, setAccountId] = useState(initial.accountId);
-  const [transferToAccountId, setTransferToAccountId] = useState(
-    initial.transferToAccountId ?? '',
-  );
-  const [note, setNote] = useState(initial.note ?? '');
-  // "Count against next month" is on when the saved budget month is the month
-  // after the date. Transfers are never budgeted, so the option is hidden there.
-  const [forNextMonth, setForNextMonth] = useState(
-    !!initial.budgetMonth && initial.budgetMonth === addMonths(initial.date.slice(0, 7), 1),
-  );
-  const canDefer = category !== 'transfer';
-
-  const submit = () => {
-    const value = parseFloat(amount.replace(',', '.'));
-    if (!date || !Number.isFinite(value) || value <= 0) return;
-    if (
-      category === 'transfer' &&
-      (!accountId || !transferToAccountId || accountId === transferToAccountId)
-    ) {
-      return;
-    }
-    onSave({
-      date,
-      category,
-      amount: value,
-      accountId,
-      transferToAccountId: category === 'transfer' ? transferToAccountId : undefined,
-      note: note.trim(),
-      budgetMonth:
-        canDefer && forNextMonth ? addMonths(date.slice(0, 7), 1) : undefined,
-    });
-  };
-
-  return (
-    <Modal title={title} onClose={onClose}>
-      <div className="form-grid">
-        <Field label="Date">
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        </Field>
-        <Field label="Category">
-          <select value={category} onChange={(e) => setCategory(e.target.value)}>
-            {EXPENSE_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Amount (€)">
-          <input
-            type="number"
-            inputMode="decimal"
-            step="0.01"
-            min="0"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="0.00"
-          />
-        </Field>
-        <Field label={category === 'transfer' ? 'From account' : 'Payment account'}>
-          <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-            <option value="">— none —</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {category === 'transfer' && (
-          <Field label="Transfer to account">
-            <select
-              value={transferToAccountId}
-              onChange={(e) => setTransferToAccountId(e.target.value)}
-            >
-              <option value="">— choose account —</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
-        <Field label="Note (optional)">
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note" />
-        </Field>
-      </div>
-
-      {canDefer && (
-        <>
-          <label className="checkbox-row" style={{ marginTop: 14 }}>
-            <input
-              type="checkbox"
-              checked={forNextMonth}
-              onChange={(e) => setForNextMonth(e.target.checked)}
-            />
-            Count against next month's budget (keeps this month's safe-to-spend intact)
-          </label>
-          {forNextMonth && (
-            <div className="tiny muted" style={{ marginTop: 6 }}>
-              Paid {date ? formatDate(date) : 'this month'}, but counts toward{' '}
-              {monthLabel(addMonths(date.slice(0, 7), 1))}.
-            </div>
-          )}
-        </>
-      )}
-
-      <div className="form-actions">
-        <Button variant="secondary" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button onClick={submit}>Save</Button>
-      </div>
-    </Modal>
   );
 }

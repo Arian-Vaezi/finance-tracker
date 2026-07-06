@@ -4,9 +4,23 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <title>Finance Tracker</title>
+    <script>
+      // Set the theme class before first paint to avoid a light/dark flash.
+      (function () {
+        try {
+          var t = localStorage.getItem('finance-theme');
+          var dark =
+            t === 'dark' ||
+            (t !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.classList.toggle('dark', dark);
+        } catch (e) {
+          /* no localStorage - default to light */
+        }
+      })();
+    </script>
     <meta
       name="description"
       content="Local-first personal finance tracker: income, expenses, fixed costs, bank accounts and debt, with a debt-aware net worth and safe-to-spend calculator."
@@ -18,7 +32,7 @@
 
     <!-- PWA -->
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#fafafa" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

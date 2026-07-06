@@ -1,12 +1,16 @@
 import { eur, pct } from '../lib/format';
+import { cn } from '@/lib/utils';
 
 // Lightweight, dependency-free charts built from plain divs.
 // They stay readable on a phone and never need a charting library.
+// Colors come from the theme's categorical chart tokens so both modes work.
 
 const PALETTE = [
-  '#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444',
-  '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#84cc16',
-  '#06b6d4', '#a855f7', '#eab308', '#22c55e', '#64748b',
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
 ];
 
 export function colorForIndex(i: number): string {
@@ -29,19 +33,19 @@ export function BarList({
 }) {
   const max = Math.max(1, ...data.map((d) => d.value));
   if (data.length === 0) {
-    return <p className="chart-empty">{emptyLabel}</p>;
+    return <p className="py-6 text-center text-sm text-muted-foreground">{emptyLabel}</p>;
   }
   return (
-    <div className="barlist">
+    <div className="flex flex-col gap-3">
       {data.map((d, i) => (
-        <div className="barlist-row" key={d.label}>
-          <div className="barlist-top">
-            <span className="barlist-label">{d.label}</span>
-            <span className="barlist-value">{eur(d.value)}</span>
+        <div key={d.label}>
+          <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
+            <span className="truncate capitalize">{d.label}</span>
+            <span className="shrink-0 font-medium">{eur(d.value)}</span>
           </div>
-          <div className="barlist-track">
+          <div className="h-2 overflow-hidden rounded-full bg-muted">
             <div
-              className="barlist-bar"
+              className="h-full rounded-full"
               style={{
                 width: `${(d.value / max) * 100}%`,
                 background: d.color ?? colorForIndex(i),
@@ -53,6 +57,12 @@ export function BarList({
     </div>
   );
 }
+
+const PROPORTION_FILL: Record<'safe' | 'warning' | 'danger', string> = {
+  safe: 'bg-success',
+  warning: 'bg-warning',
+  danger: 'bg-destructive',
+};
 
 /**
  * Single proportion bar, e.g. "fixed costs are 74% of income".
@@ -74,18 +84,18 @@ export function ProportionBar({
   const autoTone: 'safe' | 'warning' | 'danger' =
     fraction > 0.7 ? 'danger' : fraction > 0.5 ? 'warning' : 'safe';
   return (
-    <div className="proportion">
-      <div className="proportion-top">
-        <span>{partLabel}</span>
-        <strong>{pct(fraction)}</strong>
+    <div className="mt-3">
+      <div className="flex items-baseline justify-between gap-2 text-sm">
+        <span className="text-muted-foreground">{partLabel}</span>
+        <strong className="font-semibold">{pct(fraction)}</strong>
       </div>
-      <div className="proportion-track">
+      <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted">
         <div
-          className={`proportion-fill proportion-fill--${tone ?? autoTone}`}
+          className={cn('h-full rounded-full', PROPORTION_FILL[tone ?? autoTone])}
           style={{ width: `${clamped * 100}%` }}
         />
       </div>
-      <div className="proportion-foot">
+      <div className="mt-1 text-xs text-muted-foreground">
         {eur(part)} of {eur(whole)}
       </div>
     </div>
